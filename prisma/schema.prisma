@@ -1,0 +1,127 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Organization {
+  id           String        @id @default("default-org")
+  name         String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  users        User[]
+  accounts     Account[]
+  categories   Category[]
+  transactions Transaction[]
+  auditLogs    AuditLog[]
+}
+
+model User {
+  id                  String        @id @default(cuid())
+  email               String        @unique
+  passwordHash        String
+  name                String
+  role                String        @default("EDITOR") // ADMIN | EDITOR | VIEWER
+  active              Boolean       @default(true)
+  mustChangePassword  Boolean       @default(false)
+  lastLoginAt         DateTime?
+  failedLoginCount    Int           @default(0)
+  lockedUntil         DateTime?
+  sessionVersion      Int           @default(1)
+  organizationId      String        @default("default-org")
+  organization        Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  createdTransactions Transaction[] @relation("TransactionsCreated")
+  updatedTransactions Transaction[] @relation("TransactionsUpdated")
+
+  @@index([organizationId])
+  @@index([email])
+}
+
+model Account {
+  id                  String        @id @default(cuid())
+  name                String
+  type                String        // BANK | CASH | CARD
+  initialBalanceCents Int           @default(0)
+  active              Boolean       @default(true)
+  organizationId      String        @default("default-org")
+  organization        Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  transactions        Transaction[]
+
+  @@index([organizationId])
+}
+
+model Category {
+  id             String        @id @default(cuid())
+  name           String
+  parentId       String?
+  parent         Category?     @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children       Category[]    @relation("CategoryHierarchy")
+  kind           String        // INCOME | EXPENSE
+  dreLine        String        // RECEITA_BRUTA | DEDUCOES | CMV | DESPESAS_OPERACIONAIS | RECEITAS_FINANCEIRAS | DESPESAS_FINANCEIRAS | IMPOSTOS_LUCRO | FORA_DRE
+  active         Boolean       @default(true)
+  sortOrder      Int           @default(0)
+  organizationId String        @default("default-org")
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  transactions   Transaction[]
+
+  @@index([organizationId])
+  @@index([parentId])
+}
+
+model Transaction {
+  id             String       @id @default(cuid())
+  date           DateTime
+  kind           String       // INCOME | EXPENSE
+  amountCents    Int          // Sempre positivo; o sinal vem do kind
+  description    String
+  accountId      String
+  account        Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  categoryId     String
+  category       Category     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  notes          String?
+  organizationId String       @default("default-org")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdById    String?
+  createdBy      User?        @relation("TransactionsCreated", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById    String?
+  updatedBy      User?        @relation("TransactionsUpdated", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([date])
+  @@index([categoryId])
+  @@index([accountId])
+  @@index([organizationId])
+  @@index([createdById])
+}
+
+model AuditLog {
+  id             String       @id @default(cuid())
+  action         String       // LOGIN_SUCCESS | LOGIN_FAILED | LOGIN_LOCKED | USER_CREATED | USER_UPDATED | USER_ACTIVATED | USER_DEACTIVATED | PASSWORD_RESET | PASSWORD_CHANGED
+  userId         String?
+  userName       String?
+  targetUserId   String?
+  targetUserName String?
+  details        String?
+  ipAddress      String?
+  organizationId String       @default("default-org")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId])
+  @@index([createdAt])
+  @@index([action])
+  @@index([userId])
+}
