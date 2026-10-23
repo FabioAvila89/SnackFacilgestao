@@ -71,8 +71,8 @@ export async function GET(req: Request) {
 
   if (search) {
     where.OR = [
-      { description: { contains: search } },
-      { notes: { contains: search } },
+      { description: { contains: search, mode: "insensitive" } },
+      { notes: { contains: search, mode: "insensitive" } },
     ];
   }
 

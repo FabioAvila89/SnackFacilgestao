@@ -14,3 +14,11 @@ dev.db-journal
 dev.db-wal
 dev.db-shm
 dist
+# Qualquer variação de .env (menos o exemplo)
+.env.*
+!.env.example
+# Bancos locais
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3

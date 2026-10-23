@@ -226,27 +226,123 @@ npm test
 
 ---
 
-## ☁️ Guia de Deploy Simples e Barato
+## ☁️ Guia de Publicação e Produção (Supabase + VPS / Cloud)
 
-Para hospedar o sistema com baixo custo (ou custo zero para uso interno de 1 sócio):
+O sistema utiliza PostgreSQL gerenciado no **Supabase** com Prisma ORM e Row Level Security (RLS) ativo em todas as tabelas.
 
-### Opção Recomendada: Vercel + Supabase / Neon (PostgreSQL)
+### 1. Variáveis de Ambiente Necessárias em Produção
+No servidor de produção (ou painel da VPS), configure as seguintes variáveis no arquivo `.env` (ou variáveis de sistema):
 
-1. **Banco de Dados Gratuito**:
-   - Crie uma conta gratuita no [Supabase](https://supabase.com/) ou [Neon](https://neon.tech/).
-   - Crie um projeto PostgreSQL e copie a `DATABASE_URL`.
-   - No arquivo `prisma/schema.prisma`, altere o provider de `sqlite` para `postgresql`.
-   - Execute `npx prisma db push` para criar as tabelas.
+```env
+# Banco de Dados (Supabase PostgreSQL)
+# DATABASE_URL: Pooler Supavisor em modo TRANSACTION (porta 6543) para a aplicação
+DATABASE_URL="postgresql://postgres.[PROJECT_REF]:[SENHA]@aws-0-sa-east-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1&sslmode=require"
 
-2. **Hospedagem no Vercel**:
-   - Crie uma conta no [Vercel](https://vercel.com/) e conecte seu repositório Git.
-   - Configure as Variáveis de Ambiente no painel da Vercel:
-     - `DATABASE_URL`: URL do seu banco Postgres
-     - `JWT_SECRET`: Chave secreta longa e segura
-     - `ADMIN_EMAIL`: Seu e-mail de acesso
-     - `ADMIN_PASSWORD`: Sua senha segura
-     - `ADMIN_NAME`: Seu nome
-   - Clique em **Deploy**. A Vercel cuidará automaticamente do build e disponibilizará o sistema com HTTPS e domínio gratuito `.vercel.app`.
+# DIRECT_URL: Pooler em modo SESSION (porta 5432) ou conexão direta, usado para migrações
+DIRECT_URL="postgresql://postgres.[PROJECT_REF]:[SENHA]@aws-0-sa-east-1.pooler.supabase.com:5432/postgres?sslmode=require"
+
+# Autenticação
+JWT_SECRET="string-aleatoria-longa-e-segura-minimo-32-caracteres"
+
+# Aplicação e Fuso Horário
+NEXT_PUBLIC_APP_NAME="Snack Fácil"
+TZ="America/Sao_Paulo"
+```
+
+> ⚠️ **Atenção a IPv6**: A conexão direta do Supabase (`db.[PROJECT_REF].supabase.co`) frequentemente só opera em IPv6. Se a sua VPS não tiver conectividade IPv6 nativa habilitada, utilize obrigatoriamente o host do pooler na porta `5432` tanto para o `DIRECT_URL` quanto para o `DATABASE_URL` (na porta `6543`), pois o pooler possui resolução IPv4 estável.
+
+---
+
+### 2. Executar Migrações em Produção
+Em produção, **NUNCA** execute `prisma migrate dev` nem `prisma migrate reset` (eles são destrutivos). Execute estritamente:
+
+```bash
+npx prisma migrate deploy
+```
+Esse comando aplica as migrações versionadas pendentes (`prisma/migrations/`) utilizando a conexão segura `DIRECT_URL`.
+
+---
+
+### 3. Publicação em VPS (Node.js + PM2 + Nginx)
+
+#### A. Pré-requisitos na VPS
+- Ubuntu 22.04 LTS ou 24.04 LTS
+- Node.js 20 LTS ou 22 LTS
+- Nginx e Certbot (Let's Encrypt para HTTPS gratuito)
+- PM2 (`npm install -g pm2`)
+
+#### B. Instalação e Build
+```bash
+# 1. Clonar o repositório
+git clone <url-do-repositorio> /var/www/snack-facil
+cd /var/www/snack-facil
+
+# 2. Configurar o .env de produção
+cp .env.example .env
+nano .env # Insira as credenciais do Supabase e o JWT_SECRET
+
+# 3. Instalar dependências e compilar
+npm ci
+npx prisma generate
+npx prisma migrate deploy
+npm run build
+
+# 4. Iniciar com PM2
+pm2 start npm --name "snack-facil" -- start
+pm2 save
+pm2 startup
+```
+
+#### C. Proxy Reverso Nginx (com SSL)
+Exemplo de bloco de configuração do Nginx (`/etc/nginx/sites-available/snack-facil`):
+```nginx
+server {
+    server_name financeiro.suaempresa.com.br;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+Ative o certificado SSL com:
+```bash
+sudo certbot --nginx -d financeiro.suaempresa.com.br
+```
+
+---
+
+### 4. Observações sobre Publicação no Firebase
+- O **Firebase Hosting tradicional** serve apenas páginas estáticas (HTML/CSS/JS compilados).
+- Como este sistema é uma aplicação full-stack Next.js com rotas API, middleware dinâmico e banco de dados, sua hospedagem no Firebase requer o **Firebase App Hosting** (ou Cloud Run com contêiner Node.js), que suporta computação no lado do servidor.
+- Para uma gestão mais simples e com menor atrito em Next.js, uma **VPS com PM2/Nginx** ou plataformas como **Vercel** / **Railway** são recomendadas.
+
+---
+
+### 5. Rotina de Backup e Restauração do Banco de Dados
+
+#### A. Gerar Backup Manual via `pg_dump`
+Utilize a string `DIRECT_URL` (conexão direta/porta 5432):
+```bash
+pg_dump "postgresql://postgres.[PROJECT_REF]:[SENHA]@aws-0-sa-east-1.pooler.supabase.com:5432/postgres?sslmode=require" -Fc -f backup_snackfacil_$(date +%Y%m%d_%H%M%S).dump
+```
+
+#### B. Sugestão de Rotina Automatizada (Cron Diário)
+Na VPS, você pode configurar um agendamento no `crontab` para gerar cópias diárias e reter os últimos 30 dias:
+```bash
+0 3 * * * pg_dump "DIRECT_URL" -Fc -f /backups/snack_$(date +\%F).dump && find /backups -name "snack_*.dump" -mtime +30 -delete
+```
+
+#### C. Alertas Importantes sobre o Supabase
+- **Pausa por Inatividade (Plano Gratuito)**: Projetos gratuitos no Supabase são automaticamente pausados após 7 dias de inatividade de requisições. Para um sistema financeiro em produção contínua, recomenda-se manter o projeto ativo ou considerar o plano Pro.
+- **Restauração Pontual (Point-in-Time Recovery - PITR)**: O plano gratuito não inclui PITR. Portanto, backups externos rotineiros (`pg_dump`) são indispensáveis para garantir a salvaguarda dos dados financeiros da empresa.
 
 ---
 
