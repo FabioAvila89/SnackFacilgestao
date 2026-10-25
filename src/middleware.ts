@@ -13,6 +13,7 @@ export async function middleware(request: NextRequest) {
   if (
     pathname === "/login" ||
     pathname.startsWith("/api/auth/login") ||
+    pathname.startsWith("/api/health-check") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon.ico") ||
     pathname.startsWith("/api/export/template") // Modelo de importação público
