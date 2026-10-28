@@ -5,6 +5,7 @@ export type PermissionAction =
   | "access_management:manage"
   | "user:create"
   | "user:update"
+  | "user:delete"
   | "user:toggle_status"
   | "user:reset_password"
   | "audit:view"
@@ -12,6 +13,8 @@ export type PermissionAction =
   | "category:write"
   | "account:read"
   | "account:write"
+  | "supplier:read"
+  | "supplier:write"
   | "transaction:read"
   | "transaction:create"
   | "transaction:edit"
@@ -29,6 +32,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly PermissionAction[]> = {
     "access_management:manage",
     "user:create",
     "user:update",
+    "user:delete",
     "user:toggle_status",
     "user:reset_password",
     "audit:view",
@@ -36,6 +40,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly PermissionAction[]> = {
     "category:write",
     "account:read",
     "account:write",
+    "supplier:read",
+    "supplier:write",
     "transaction:read",
     "transaction:create",
     "transaction:edit",
@@ -47,6 +53,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly PermissionAction[]> = {
   EDITOR: [
     "category:read",
     "account:read",
+    "supplier:read",
+    "supplier:write",
     "transaction:read",
     "transaction:create",
     "transaction:edit",
@@ -58,6 +66,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly PermissionAction[]> = {
   VIEWER: [
     "category:read",
     "account:read",
+    "supplier:read",
     "transaction:read",
     "export:execute",
     "reports:view",

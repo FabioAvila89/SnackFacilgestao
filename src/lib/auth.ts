@@ -165,6 +165,7 @@ export interface AuditLogInput {
     | "USER_UPDATED"
     | "USER_ACTIVATED"
     | "USER_DEACTIVATED"
+    | "USER_DELETED"
     | "PASSWORD_RESET"
     | "PASSWORD_CHANGED";
   userId?: string | null;

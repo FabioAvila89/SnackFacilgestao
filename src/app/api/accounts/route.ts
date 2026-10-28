@@ -21,6 +21,7 @@ export async function GET() {
         select: {
           kind: true,
           amountCents: true,
+          status: true,
         },
       },
     },
@@ -29,7 +30,15 @@ export async function GET() {
   const accountsWithCalculations = accounts.map((acc) => {
     let income = 0;
     let expense = 0;
+    let pendingIncome = 0;
+    let pendingExpense = 0;
+
     for (const t of acc.transactions) {
+      if (t.status === "PENDING") {
+        if (t.kind === "INCOME") pendingIncome += t.amountCents;
+        else if (t.kind === "EXPENSE") pendingExpense += t.amountCents;
+        continue;
+      }
       if (t.kind === "INCOME") income += t.amountCents;
       else if (t.kind === "EXPENSE") expense += t.amountCents;
     }
@@ -42,6 +51,8 @@ export async function GET() {
       currentBalanceCents: acc.initialBalanceCents + income - expense,
       totalIncomeCents: income,
       totalExpenseCents: expense,
+      pendingIncomeCents: pendingIncome,
+      pendingExpenseCents: pendingExpense,
       active: acc.active,
       createdAt: acc.createdAt,
       updatedAt: acc.updatedAt,

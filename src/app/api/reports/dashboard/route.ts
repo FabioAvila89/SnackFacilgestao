@@ -29,7 +29,7 @@ export async function GET(req: Request) {
     where: { organizationId: user.organizationId },
     include: {
       transactions: {
-        select: { kind: true, amountCents: true },
+        select: { kind: true, amountCents: true, status: true },
       },
     },
   });
@@ -67,8 +67,15 @@ export async function GET(req: Request) {
 
   let monthIncomeCents = 0;
   let monthExpenseCents = 0;
+  let monthPendingIncomeCents = 0;
+  let monthPendingExpenseCents = 0;
 
   for (const t of monthTransactions) {
+    if (t.status === "PENDING") {
+      if (t.kind === "INCOME") monthPendingIncomeCents += t.amountCents;
+      if (t.kind === "EXPENSE") monthPendingExpenseCents += t.amountCents;
+      continue;
+    }
     if (t.kind === "INCOME") monthIncomeCents += t.amountCents;
     if (t.kind === "EXPENSE") monthExpenseCents += t.amountCents;
   }
@@ -152,6 +159,8 @@ export async function GET(req: Request) {
       monthIncomeCents,
       monthExpenseCents,
       monthResultCents,
+      monthPendingIncomeCents,
+      monthPendingExpenseCents,
     },
     chartLast12Months,
     top5Expenses,

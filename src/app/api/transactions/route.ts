@@ -2,6 +2,15 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { z } from "zod";
+import crypto from "crypto";
+
+const installmentItemSchema = z.object({
+  installmentNumber: z.number().int().positive(),
+  totalInstallments: z.number().int().positive(),
+  dueDate: z.string().min(1),
+  amountCents: z.number().int().positive(),
+  status: z.enum(["PAID", "PENDING"]).default("PENDING"),
+});
 
 const transactionSchema = z.object({
   date: z.string().min(1, "Data é obrigatória"),
@@ -11,6 +20,14 @@ const transactionSchema = z.object({
   accountId: z.string().min(1, "Conta é obrigatória"),
   categoryId: z.string().min(1, "Categoria é obrigatória"),
   notes: z.string().nullable().optional(),
+  status: z.enum(["PAID", "PENDING"]).default("PAID"),
+  dueDate: z.string().nullable().optional(),
+  supplierId: z.string().nullable().optional(),
+  isRecurring: z.boolean().default(false),
+  recurrenceFrequency: z.enum(["MONTHLY", "WEEKLY", "YEARLY"]).nullable().optional(),
+  isInstallment: z.boolean().default(false),
+  totalInstallments: z.number().int().positive().nullable().optional(),
+  installments: z.array(installmentItemSchema).optional(),
 });
 
 export async function GET(req: Request) {
@@ -22,8 +39,11 @@ export async function GET(req: Request) {
   const limit = Math.max(1, Math.min(100, parseInt(url.searchParams.get("limit") || "25", 10)));
   const search = url.searchParams.get("search")?.trim() || "";
   const kind = url.searchParams.get("kind");
+  const status = url.searchParams.get("status"); // ALL | PAID | PENDING | RECURRING
+  const isRecurring = url.searchParams.get("isRecurring");
   const accountId = url.searchParams.get("accountId");
   const categoryId = url.searchParams.get("categoryId");
+  const supplierId = url.searchParams.get("supplierId");
   const startDateStr = url.searchParams.get("startDate");
   const endDateStr = url.searchParams.get("endDate");
 
@@ -35,12 +55,25 @@ export async function GET(req: Request) {
     where.kind = kind;
   }
 
+  if (status === "PAID" || status === "PENDING") {
+    where.status = status;
+  }
+
+  if (status === "RECURRING" || isRecurring === "true") {
+    where.isRecurring = true;
+  } else if (isRecurring === "false") {
+    where.isRecurring = false;
+  }
+
   if (accountId) {
     where.accountId = accountId;
   }
 
+  if (supplierId) {
+    where.supplierId = supplierId;
+  }
+
   if (categoryId) {
-    // Busca se a categoria é pai; se for, filtra por ela e todos os seus filhos
     const cat = await prisma.category.findUnique({
       where: { id: categoryId },
       include: { children: { select: { id: true } } },
@@ -73,12 +106,13 @@ export async function GET(req: Request) {
     where.OR = [
       { description: { contains: search, mode: "insensitive" } },
       { notes: { contains: search, mode: "insensitive" } },
+      { supplier: { name: { contains: search, mode: "insensitive" } } },
     ];
   }
 
   // Busca totais do filtro aplicado (agregação rápida)
   const totalsRaw = await prisma.transaction.groupBy({
-    by: ["kind"],
+    by: ["kind", "status"],
     where,
     _sum: {
       amountCents: true,
@@ -90,13 +124,20 @@ export async function GET(req: Request) {
 
   let totalIncomeCents = 0;
   let totalExpenseCents = 0;
+  let pendingIncomeCents = 0;
+  let pendingExpenseCents = 0;
   let totalCount = 0;
 
   for (const t of totalsRaw) {
     const sum = t._sum.amountCents || 0;
     totalCount += t._count.id;
-    if (t.kind === "INCOME") totalIncomeCents += sum;
-    if (t.kind === "EXPENSE") totalExpenseCents += sum;
+    if (t.kind === "INCOME") {
+      if (t.status === "PENDING") pendingIncomeCents += sum;
+      else totalIncomeCents += sum;
+    } else if (t.kind === "EXPENSE") {
+      if (t.status === "PENDING") pendingExpenseCents += sum;
+      else totalExpenseCents += sum;
+    }
   }
 
   const resultCents = totalIncomeCents - totalExpenseCents;
@@ -116,6 +157,9 @@ export async function GET(req: Request) {
           parentId: true,
           parent: { select: { id: true, name: true } },
         },
+      },
+      supplier: {
+        select: { id: true, name: true, phone: true },
       },
       createdBy: {
         select: { id: true, name: true, email: true },
@@ -137,6 +181,8 @@ export async function GET(req: Request) {
     totals: {
       incomeCents: totalIncomeCents,
       expenseCents: totalExpenseCents,
+      pendingIncomeCents,
+      pendingExpenseCents,
       resultCents,
     },
   });
@@ -146,7 +192,6 @@ export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
-  // Validação de permissão no servidor
   const { can } = await import("@/lib/permissions");
   if (!can(user, "transaction:create")) {
     return NextResponse.json(
@@ -166,7 +211,23 @@ export async function POST(req: Request) {
       );
     }
 
-    const { date, kind, amountCents, description, accountId, categoryId, notes } = parsed.data;
+    const {
+      date,
+      kind,
+      amountCents,
+      description,
+      accountId,
+      categoryId,
+      notes,
+      status,
+      dueDate,
+      supplierId,
+      isRecurring,
+      recurrenceFrequency,
+      isInstallment,
+      totalInstallments,
+      installments,
+    } = parsed.data;
 
     // 1. Valida conta
     const account = await prisma.account.findFirst({
@@ -202,25 +263,100 @@ export async function POST(req: Request) {
       );
     }
 
-    // Converte data
+    // 4. Valida fornecedor (se fornecido)
+    if (supplierId) {
+      const sup = await prisma.supplier.findFirst({
+        where: { id: supplierId, organizationId: user.organizationId },
+      });
+      if (!sup) {
+        return NextResponse.json({ error: "Fornecedor não encontrado." }, { status: 400 });
+      }
+    }
+
+    // Converte data base
     const dateObj = new Date(date);
     dateObj.setUTCHours(12, 0, 0, 0);
+
+    // =========================================================================
+    // LANÇAMENTO PARCELADO (Cria N lançamentos vinculados)
+    // =========================================================================
+    if (isInstallment && installments && installments.length > 1) {
+      const installmentGroupId = crypto.randomUUID();
+      const numInstallments = installments.length;
+
+      const createdTransactions = await prisma.$transaction(
+        installments.map((inst) => {
+          const dueObj = new Date(inst.dueDate);
+          dueObj.setUTCHours(12, 0, 0, 0);
+
+          return prisma.transaction.create({
+            data: {
+              date: dateObj,
+              dueDate: dueObj,
+              paidAt: inst.status === "PAID" ? new Date() : null,
+              status: inst.status,
+              kind,
+              amountCents: inst.amountCents,
+              description: `${description.trim()} (${inst.installmentNumber}/${numInstallments})`,
+              accountId,
+              categoryId,
+              notes: notes ? notes.trim() : null,
+              supplierId: supplierId || null,
+              isInstallment: true,
+              installmentNumber: inst.installmentNumber,
+              totalInstallments: numInstallments,
+              installmentGroupId,
+              organizationId: user.organizationId,
+              createdById: user.userId,
+            },
+            include: {
+              account: true,
+              category: true,
+              supplier: true,
+              createdBy: { select: { id: true, name: true, email: true } },
+            },
+          });
+        })
+      );
+
+      return NextResponse.json(
+        { transactions: createdTransactions, message: `${createdTransactions.length} parcelas criadas com sucesso.` },
+        { status: 201 }
+      );
+    }
+
+    // =========================================================================
+    // LANÇAMENTO PADRÃO / RECORRENTE
+    // =========================================================================
+    let dueDateObj: Date | null = null;
+    if (dueDate) {
+      dueDateObj = new Date(dueDate);
+      dueDateObj.setUTCHours(12, 0, 0, 0);
+    }
 
     const transaction = await prisma.transaction.create({
       data: {
         date: dateObj,
+        dueDate: dueDateObj,
+        paidAt: status === "PAID" ? new Date() : null,
+        status: status || "PAID",
         kind,
         amountCents,
         description: description.trim(),
         accountId,
         categoryId,
         notes: notes ? notes.trim() : null,
+        supplierId: supplierId || null,
+        isRecurring: !!isRecurring,
+        recurrenceFrequency: isRecurring ? (recurrenceFrequency || "MONTHLY") : null,
+        isInstallment: false,
         organizationId: user.organizationId,
         createdById: user.userId,
       },
       include: {
         account: true,
         category: true,
+        supplier: true,
         createdBy: { select: { id: true, name: true, email: true } },
       },
     });

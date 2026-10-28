@@ -26,3 +26,5 @@ dist
 # Dumps e backups de dados
 scripts/dump.sql
 *.sql
+
+*.tsbuildinfo

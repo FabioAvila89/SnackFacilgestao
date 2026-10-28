@@ -17,6 +17,7 @@ model Organization {
   accounts     Account[]
   categories   Category[]
   transactions Transaction[]
+  suppliers    Supplier[]
   auditLogs    AuditLog[]
 }
 
@@ -79,33 +80,74 @@ model Category {
   @@index([parentId])
 }
 
+model Supplier {
+  id             String        @id @default(cuid())
+  name           String
+  phone          String
+  email          String?
+  document       String?
+  notes          String?
+  active         Boolean       @default(true)
+  organizationId String        @default("default-org")
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  transactions   Transaction[]
+
+  @@index([organizationId])
+  @@index([name])
+}
+
 model Transaction {
-  id             String       @id @default(cuid())
+  id             String        @id @default(cuid())
   date           DateTime
-  kind           String       // INCOME | EXPENSE
-  amountCents    Int          // Sempre positivo; o sinal vem do kind
+  kind           String        // INCOME | EXPENSE
+  amountCents    Int           // Sempre positivo; o sinal vem do kind
   description    String
   accountId      String
-  account        Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  account        Account       @relation(fields: [accountId], references: [id], onDelete: Restrict)
   categoryId     String
-  category       Category     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  category       Category      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   notes          String?
-  organizationId String       @default("default-org")
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String        @default("default-org")
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Status e Datas Financeiras
+  status         String        @default("PAID") // PAID | PENDING
+  paidAt         DateTime?
+  dueDate        DateTime?
+
+  // Fornecedor (opcional)
+  supplierId     String?
+  supplier       Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+
+  // Recorrência
+  isRecurring         Boolean  @default(false)
+  recurrenceFrequency String?  // MONTHLY | WEEKLY | YEARLY
+
+  // Parcelamento
+  isInstallment       Boolean  @default(false)
+  installmentNumber   Int?
+  totalInstallments   Int?
+  installmentGroupId  String?
 
   createdById    String?
-  createdBy      User?        @relation("TransactionsCreated", fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy      User?         @relation("TransactionsCreated", fields: [createdById], references: [id], onDelete: SetNull)
   updatedById    String?
-  updatedBy      User?        @relation("TransactionsUpdated", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedBy      User?         @relation("TransactionsUpdated", fields: [updatedById], references: [id], onDelete: SetNull)
 
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   @@index([date])
   @@index([categoryId])
   @@index([accountId])
   @@index([organizationId])
   @@index([createdById])
+  @@index([status])
+  @@index([dueDate])
+  @@index([supplierId])
+  @@index([installmentGroupId])
 }
 
 model AuditLog {

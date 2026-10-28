@@ -111,3 +111,51 @@ export function formatPercent(value: number | null | undefined): string {
     }) + "%"
   );
 }
+
+/**
+ * Formata telefone brasileiro com prefixo +55 e DDD (ex: +55 (11) 98765-4321)
+ */
+export function formatPhoneBR(val: string): string {
+  if (!val) return "+55 ";
+  // Remove tudo que não for dígito
+  let digits = val.replace(/\D/g, "");
+
+  // Se começar com 55, remove para reformatar limpo
+  if (digits.startsWith("55") && digits.length > 2) {
+    digits = digits.slice(2);
+  }
+
+  // Limita a 11 dígitos (DDD + 9 dígitos)
+  digits = digits.slice(0, 11);
+
+  if (digits.length === 0) return "+55 ";
+  if (digits.length <= 2) return `+55 (${digits}`;
+  if (digits.length <= 6) return `+55 (${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) {
+    return `+55 (${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+  return `+55 (${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
+}
+
+/**
+ * Máscara dinâmica para CPF (000.000.000-00) ou CNPJ (00.000.000/0001-00)
+ */
+export function formatCpfCnpj(val: string): string {
+  if (!val) return "";
+  const digits = val.replace(/\D/g, "").slice(0, 14);
+
+  if (digits.length <= 11) {
+    // CPF
+    return digits
+      .replace(/(\d{3})(\d)/, "$1.$2")
+      .replace(/(\d{3})(\d)/, "$1.$2")
+      .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+  } else {
+    // CNPJ
+    return digits
+      .replace(/^(\d{2})(\d)/, "$1.$2")
+      .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
+      .replace(/\.(\d{3})(\d)/, ".$1/$2")
+      .replace(/(\d{4})(\d{1,2})$/, "$1-$2");
+  }
+}
