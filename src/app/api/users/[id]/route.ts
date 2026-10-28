@@ -253,13 +253,84 @@ export async function PATCH(
   }
 }
 
-// Bloqueio explícito de exclusão de usuário (conforme seção 4.3)
-export async function DELETE() {
-  return NextResponse.json(
-    {
-      error:
-        "Não é permitido excluir usuários para preservar o histórico de autoria dos lançamentos financeiros. Utilize a desativação da conta.",
-    },
-    { status: 405 }
-  );
+// Exclusão definitiva de usuário com validação de perfil e auditoria
+export async function DELETE(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) {
+    return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+  }
+
+  if (!can(currentUser, "user:delete")) {
+    return NextResponse.json(
+      { error: "Acesso negado. Apenas administradores podem excluir usuários." },
+      { status: 403 }
+    );
+  }
+
+  try {
+    const targetUser = await prisma.user.findUnique({
+      where: { id: params.id },
+    });
+
+    if (!targetUser || targetUser.organizationId !== currentUser.organizationId) {
+      return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
+    }
+
+    // Regra 1: Administrador não pode excluir a si mesmo
+    if (targetUser.id === currentUser.userId) {
+      return NextResponse.json(
+        { error: "Você não pode excluir o seu próprio usuário." },
+        { status: 400 }
+      );
+    }
+
+    // Regra 2: Não excluir o único administrador ativo
+    if (targetUser.role === "ADMIN" && targetUser.active) {
+      const activeAdmins = await prisma.user.count({
+        where: {
+          organizationId: currentUser.organizationId,
+          role: "ADMIN",
+          active: true,
+        },
+      });
+
+      if (activeAdmins <= 1) {
+        return NextResponse.json(
+          { error: "Não é permitido excluir o único administrador ativo do sistema." },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Executa a exclusão definitiva do usuário
+    await prisma.user.delete({
+      where: { id: targetUser.id },
+    });
+
+    const ip = getClientIp(req);
+    await createAuditLog({
+      action: "USER_DELETED",
+      userId: currentUser.userId,
+      userName: currentUser.name,
+      targetUserId: targetUser.id,
+      targetUserName: targetUser.name,
+      details: `Usuário ${targetUser.name} (${targetUser.email}) excluído permanentemente do sistema`,
+      ipAddress: ip,
+      organizationId: currentUser.organizationId,
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: "Usuário excluído com sucesso.",
+    });
+  } catch (error) {
+    console.error("Erro ao excluir usuário:", error);
+    return NextResponse.json(
+      { error: "Erro interno no servidor ao excluir usuário." },
+      { status: 500 }
+    );
+  }
 }

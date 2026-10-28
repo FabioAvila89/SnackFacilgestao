@@ -10,23 +10,36 @@ import {
   Download,
   Trash2,
   Edit2,
-  ArrowUpRight,
-  ArrowDownRight,
   ChevronLeft,
   ChevronRight,
   AlertTriangle,
+  Check,
+  CheckCircle2,
+  Clock,
+  Layers,
+  Repeat,
+  Truck,
+  AlertCircle,
+  Ban,
 } from "lucide-react";
 import { TransactionModal } from "@/components/TransactionModal";
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [totals, setTotals] = useState({ incomeCents: 0, expenseCents: 0, resultCents: 0 });
+  const [totals, setTotals] = useState({
+    incomeCents: 0,
+    expenseCents: 0,
+    resultCents: 0,
+    pendingIncomeCents: 0,
+    pendingExpenseCents: 0,
+  });
   const [pagination, setPagination] = useState({ page: 1, limit: 25, totalPages: 1, totalCount: 0 });
   const [loading, setLoading] = useState(true);
 
   // Filtros
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "PAID" | "PENDING" | "RECURRING">("ALL");
   const [accountId, setAccountId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -40,8 +53,11 @@ export default function TransactionsPage() {
   // Modais
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [transactionToEdit, setTransactionToEdit] = useState<any>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteTx, setDeleteTx] = useState<any | null>(null);
+  const [stopRecurrenceTx, setStopRecurrenceTx] = useState<any | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isStoppingRecurrence, setIsStoppingRecurrence] = useState(false);
+  const [markingPaidId, setMarkingPaidId] = useState<string | null>(null);
 
   // Carrega opções de contas, categorias e usuário logado
   useEffect(() => {
@@ -73,6 +89,11 @@ export default function TransactionsPage() {
       params.set("limit", String(pagination.limit));
       if (search) params.set("search", search);
       if (kind !== "ALL") params.set("kind", kind);
+      if (statusFilter === "RECURRING") {
+        params.set("isRecurring", "true");
+      } else if (statusFilter !== "ALL") {
+        params.set("status", statusFilter);
+      }
       if (accountId) params.set("accountId", accountId);
       if (categoryId) params.set("categoryId", categoryId);
       if (startDate) params.set("startDate", startDate);
@@ -83,7 +104,15 @@ export default function TransactionsPage() {
       const json = await res.json();
 
       setTransactions(json.transactions || []);
-      setTotals(json.totals || { incomeCents: 0, expenseCents: 0, resultCents: 0 });
+      setTotals(
+        json.totals || {
+          incomeCents: 0,
+          expenseCents: 0,
+          resultCents: 0,
+          pendingIncomeCents: 0,
+          pendingExpenseCents: 0,
+        }
+      );
       setPagination(json.pagination || { page: 1, limit: 25, totalPages: 1, totalCount: 0 });
     } catch (err) {
       console.error(err);
@@ -94,7 +123,7 @@ export default function TransactionsPage() {
 
   useEffect(() => {
     fetchTransactions(1);
-  }, [kind, accountId, categoryId, startDate, endDate]);
+  }, [kind, statusFilter, accountId, categoryId, startDate, endDate]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -111,16 +140,58 @@ export default function TransactionsPage() {
     setIsModalOpen(true);
   };
 
-  const confirmDelete = async () => {
-    if (!deleteId) return;
+  // Ação rápida: Dar Baixa (Marcar como Pago/Recebido)
+  const handleQuickMarkPaid = async (txId: string) => {
     try {
-      setIsDeleting(true);
-      const res = await fetch(`/api/transactions/${deleteId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Falha ao excluir");
-      setDeleteId(null);
+      setMarkingPaidId(txId);
+      const res = await fetch(`/api/transactions/${txId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "PAID" }),
+      });
+      if (!res.ok) throw new Error("Falha ao dar baixa no lançamento");
       fetchTransactions(pagination.page);
     } catch (err) {
       console.error(err);
+      alert("Erro ao marcar lançamento como pago.");
+    } finally {
+      setMarkingPaidId(null);
+    }
+  };
+
+  // Ação rápida: Encerrar Recorrência (isRecurring: false)
+  const handleStopRecurrenceDirect = async (txId: string) => {
+    try {
+      setIsStoppingRecurrence(true);
+      const res = await fetch(`/api/transactions/${txId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isRecurring: false }),
+      });
+      if (!res.ok) throw new Error("Falha ao encerrar recorrência");
+      setStopRecurrenceTx(null);
+      if (deleteTx?.id === txId) setDeleteTx(null);
+      fetchTransactions(pagination.page);
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao encerrar recorrência do lançamento.");
+    } finally {
+      setIsStoppingRecurrence(false);
+    }
+  };
+
+  const confirmDelete = async (txId?: string) => {
+    const idToDelete = txId || deleteTx?.id;
+    if (!idToDelete) return;
+    try {
+      setIsDeleting(true);
+      const res = await fetch(`/api/transactions/${idToDelete}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Falha ao excluir");
+      setDeleteTx(null);
+      fetchTransactions(pagination.page);
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao excluir lançamento.");
     } finally {
       setIsDeleting(false);
     }
@@ -130,11 +201,25 @@ export default function TransactionsPage() {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (kind !== "ALL") params.set("kind", kind);
+    if (statusFilter === "RECURRING") {
+      params.set("isRecurring", "true");
+    } else if (statusFilter !== "ALL") {
+      params.set("status", statusFilter);
+    }
     if (accountId) params.set("accountId", accountId);
     if (categoryId) params.set("categoryId", categoryId);
     if (startDate) params.set("startDate", startDate);
     if (endDate) params.set("endDate", endDate);
     window.open(`/api/export/transactions?${params.toString()}`, "_blank");
+  };
+
+  // Verifica se uma data de vencimento está atrasada (menor que hoje)
+  const isDateOverdue = (dueDateStr?: string | Date | null) => {
+    if (!dueDateStr) return false;
+    const due = new Date(dueDateStr);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return due < today;
   };
 
   return (
@@ -163,7 +248,7 @@ export default function TransactionsPage() {
             {currentUser?.role !== "VIEWER" && (
               <button
                 onClick={handleCreate}
-                className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white font-bold text-sm px-4 py-2.5 rounded-xl shadow-md shadow-orange-600/20 active:scale-95 transition-all cursor-pointer"
+                className="flex items-center gap-2 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-bold text-sm px-4 py-2.5 rounded-xl shadow-md shadow-orange-600/20 active:scale-95 transition-all cursor-pointer"
               >
                 <PlusCircle className="w-4 h-4" />
                 <span>Novo Lançamento</span>
@@ -174,24 +259,76 @@ export default function TransactionsPage() {
 
         {/* Barra de Filtros */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-          <form onSubmit={handleSearchSubmit} className="flex gap-2">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3 pointer-events-none" />
-              <input
-                type="text"
-                placeholder="Buscar por descrição ou observações..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-              />
+          {/* Busca e Filtro Rápido de Status */}
+          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+            <form onSubmit={handleSearchSubmit} className="flex-1 flex gap-2">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Buscar por descrição, fornecedor ou observações..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                />
+              </div>
+              <button
+                type="submit"
+                className="bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs px-4 py-2 rounded-xl transition-colors cursor-pointer"
+              >
+                Buscar
+              </button>
+            </form>
+
+            {/* Filtro Rápido de Status */}
+            <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl self-start md:self-auto">
+              <button
+                type="button"
+                onClick={() => setStatusFilter("ALL")}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                  statusFilter === "ALL"
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Todos
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter("PAID")}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                  statusFilter === "PAID"
+                    ? "bg-white text-emerald-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Pagos / Recebidos
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter("PENDING")}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                  statusFilter === "PENDING"
+                    ? "bg-white text-amber-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Pendentes
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter("RECURRING")}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
+                  statusFilter === "RECURRING"
+                    ? "bg-white text-blue-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Repeat className="w-3.5 h-3.5" />
+                <span>Recorrentes</span>
+              </button>
             </div>
-            <button
-              type="submit"
-              className="bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs px-4 py-2 rounded-xl transition-colors cursor-pointer"
-            >
-              Buscar
-            </button>
-          </form>
+          </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-2 border-t border-slate-100 text-xs">
             {/* Tipo */}
@@ -290,21 +427,21 @@ export default function TransactionsPage() {
             </span>
           </div>
 
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center gap-5 sm:gap-6">
             <div>
-              <span className="text-xs text-slate-400 block">Entradas:</span>
+              <span className="text-[11px] text-slate-400 block">Entradas Realizadas:</span>
               <span className="font-bold text-emerald-400">
                 {formatCentsToBRL(totals.incomeCents)}
               </span>
             </div>
             <div>
-              <span className="text-xs text-slate-400 block">Saídas:</span>
+              <span className="text-[11px] text-slate-400 block">Saídas Pagas:</span>
               <span className="font-bold text-rose-400">
                 {formatCentsToBRL(totals.expenseCents)}
               </span>
             </div>
             <div>
-              <span className="text-xs text-slate-400 block">Resultado:</span>
+              <span className="text-[11px] text-slate-400 block">Resultado Caixa:</span>
               <span
                 className={`font-bold ${
                   totals.resultCents >= 0 ? "text-emerald-400" : "text-rose-400"
@@ -313,6 +450,31 @@ export default function TransactionsPage() {
                 {formatCentsToBRL(totals.resultCents)}
               </span>
             </div>
+
+            {(totals.pendingExpenseCents > 0 || totals.pendingIncomeCents > 0) && (
+              <div className="pl-4 border-l border-slate-800 flex items-center gap-4 text-xs">
+                {totals.pendingExpenseCents > 0 && (
+                  <div>
+                    <span className="text-[10px] text-amber-400 uppercase font-bold block">
+                      A Pagar (Pendente):
+                    </span>
+                    <span className="font-bold text-amber-300">
+                      {formatCentsToBRL(totals.pendingExpenseCents)}
+                    </span>
+                  </div>
+                )}
+                {totals.pendingIncomeCents > 0 && (
+                  <div>
+                    <span className="text-[10px] text-sky-400 uppercase font-bold block">
+                      A Receber (Pendente):
+                    </span>
+                    <span className="font-bold text-sky-300">
+                      {formatCentsToBRL(totals.pendingIncomeCents)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -326,7 +488,7 @@ export default function TransactionsPage() {
                   <th className="py-3 px-4">Descrição</th>
                   <th className="py-3 px-4">Categoria</th>
                   <th className="py-3 px-4">Conta</th>
-                  <th className="py-3 px-4">Lançado por</th>
+                  <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4 text-right">Valor</th>
                   <th className="py-3 px-4 text-center">Ações</th>
                 </tr>
@@ -347,10 +509,10 @@ export default function TransactionsPage() {
                 ) : (
                   transactions.map((tx) => {
                     const isIncome = tx.kind === "INCOME";
+                    const isPending = tx.status === "PENDING";
+                    const isOverdue = isPending && isDateOverdue(tx.dueDate);
                     const hasSub = !!tx.category.parentId;
-                    const catTitle = hasSub
-                      ? tx.category.parent?.name
-                      : tx.category.name;
+                    const catTitle = hasSub ? tx.category.parent?.name : tx.category.name;
                     const subTitle = hasSub ? tx.category.name : null;
 
                     return (
@@ -358,17 +520,69 @@ export default function TransactionsPage() {
                         key={tx.id}
                         className="hover:bg-slate-50/80 transition-colors group"
                       >
+                        {/* Data */}
                         <td className="py-3.5 px-4 font-medium text-slate-600 whitespace-nowrap">
-                          {formatDateToBR(tx.date)}
+                          <div>{formatDateToBR(tx.date)}</div>
+                          {tx.dueDate && (
+                            <div className="text-[10px] text-slate-400 font-normal">
+                              Venc: {formatDateToBR(tx.dueDate)}
+                            </div>
+                          )}
                         </td>
+
+                        {/* Descrição + Badges de Parcela / Recorrência / Fornecedor */}
                         <td className="py-3.5 px-4 font-semibold text-slate-900">
-                          <div>{tx.description}</div>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span>{tx.description}</span>
+
+                            {/* Badge Parcela */}
+                            {tx.isInstallment && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                <Layers className="w-2.5 h-2.5" />
+                                <span>{tx.installmentNumber}/{tx.totalInstallments}</span>
+                              </span>
+                            )}
+
+                            {/* Badge Recorrência */}
+                            {tx.isRecurring && (
+                              <span
+                                title={`Recorrência: ${
+                                  tx.recurrenceFrequency === "WEEKLY"
+                                    ? "Semanal"
+                                    : tx.recurrenceFrequency === "YEARLY"
+                                    ? "Anual"
+                                    : "Mensal"
+                                }`}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200"
+                              >
+                                <Repeat className="w-2.5 h-2.5" />
+                                <span>
+                                  {tx.recurrenceFrequency === "WEEKLY"
+                                    ? "Semanal"
+                                    : tx.recurrenceFrequency === "YEARLY"
+                                    ? "Anual"
+                                    : "Mensal"}
+                                </span>
+                              </span>
+                            )}
+
+                            {/* Badge Fornecedor */}
+                            {tx.supplier && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                                <Truck className="w-2.5 h-2.5 text-slate-500" />
+                                <span>{tx.supplier.name}</span>
+                              </span>
+                            )}
+                          </div>
+
                           {tx.notes && (
-                            <div className="text-[11px] text-slate-400 font-normal truncate max-w-xs">
+                            <div className="text-[11px] text-slate-400 font-normal truncate max-w-xs mt-0.5">
                               {tx.notes}
                             </div>
                           )}
                         </td>
+
+                        {/* Categoria */}
                         <td className="py-3.5 px-4 text-slate-600">
                           <span className="font-medium text-slate-800">{catTitle}</span>
                           {subTitle && (
@@ -377,16 +591,35 @@ export default function TransactionsPage() {
                             </span>
                           )}
                         </td>
+
+                        {/* Conta */}
                         <td className="py-3.5 px-4 text-slate-600 whitespace-nowrap">
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
                             {tx.account.name}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 text-slate-600 whitespace-nowrap">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-700">
-                            {tx.createdBy?.name || "Sistema"}
-                          </span>
+
+                        {/* Status (Badge elegante com alerta para vencidos) */}
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          {!isPending ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>{isIncome ? "Recebido" : "Pago"}</span>
+                            </span>
+                          ) : isOverdue ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-300 animate-pulse">
+                              <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                              <span>Atrasado</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                              <Clock className="w-3.5 h-3.5 text-amber-600" />
+                              <span>{isIncome ? "A Receber" : "A Pagar"}</span>
+                            </span>
+                          )}
                         </td>
+
+                        {/* Valor */}
                         <td className="py-3.5 px-4 text-right font-black whitespace-nowrap">
                           <span
                             className={
@@ -397,11 +630,37 @@ export default function TransactionsPage() {
                             {formatCentsToBRL(tx.amountCents)}
                           </span>
                         </td>
+
+                        {/* Ações */}
                         <td className="py-3.5 px-4 text-center whitespace-nowrap">
                           {currentUser?.role === "VIEWER" ? (
                             <span className="text-xs text-slate-400 italic">Consulta</span>
                           ) : (
                             <div className="flex items-center justify-center gap-1.5 opacity-90 group-hover:opacity-100">
+                              {/* Ação Rápida: Dar Baixa */}
+                              {isPending && (
+                                <button
+                                  onClick={() => handleQuickMarkPaid(tx.id)}
+                                  disabled={markingPaidId === tx.id}
+                                  title={isIncome ? "Marcar como Recebido" : "Marcar como Pago"}
+                                  className="p-1.5 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                                >
+                                  <Check className="w-4 h-4" />
+                                </button>
+                              )}
+
+                              {/* Ação Rápida: Encerrar Recorrência */}
+                              {tx.isRecurring && (
+                                <button
+                                  onClick={() => setStopRecurrenceTx(tx)}
+                                  disabled={isStoppingRecurrence}
+                                  title="Encerrar Recorrência (interromper repetições futuras)"
+                                  className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                                >
+                                  <Ban className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
                               <button
                                 onClick={() => handleEdit(tx)}
                                 title="Editar"
@@ -410,7 +669,7 @@ export default function TransactionsPage() {
                                 <Edit2 className="w-3.5 h-3.5" />
                               </button>
                               <button
-                                onClick={() => setDeleteId(tx.id)}
+                                onClick={() => setDeleteTx(tx)}
                                 title="Excluir"
                                 className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                               >
@@ -465,37 +724,106 @@ export default function TransactionsPage() {
         transactionToEdit={transactionToEdit}
       />
 
-      {/* Modal de Confirmação de Exclusão */}
-      {deleteId && (
+      {/* Modal de Confirmação de Encerramento de Recorrência */}
+      {stopRecurrenceTx && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl border border-slate-200">
-            <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 mx-auto flex items-center justify-center">
-              <AlertTriangle className="w-6 h-6" />
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 mx-auto flex items-center justify-center">
+              <Repeat className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="font-bold text-slate-900 text-lg">Excluir Lançamento?</h3>
-              <p className="text-xs text-slate-500 mt-1">
-                Esta ação é irreversível e atualizará imediatamente o saldo das contas e os relatórios.
+              <h3 className="font-bold text-slate-900 text-lg">Encerrar Recorrência?</h3>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                O lançamento <strong>&quot;{stopRecurrenceTx.description}&quot;</strong> continuará salvo no seu histórico e nos relatórios financeiros, mas deixará de se repetir nos próximos períodos.
               </p>
             </div>
             <div className="flex items-center gap-3 pt-2">
               <button
                 type="button"
-                onClick={() => setDeleteId(null)}
-                disabled={isDeleting}
-                className="flex-1 py-2.5 text-xs font-semibold text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50"
+                onClick={() => setStopRecurrenceTx(null)}
+                disabled={isStoppingRecurrence}
+                className="flex-1 py-2.5 text-xs font-semibold text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                onClick={confirmDelete}
-                disabled={isDeleting}
-                className="flex-1 py-2.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md shadow-rose-600/20"
+                onClick={() => handleStopRecurrenceDirect(stopRecurrenceTx.id)}
+                disabled={isStoppingRecurrence}
+                className="flex-1 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md shadow-blue-600/20 transition-all active:scale-95"
               >
-                {isDeleting ? "Excluindo..." : "Sim, Excluir"}
+                {isStoppingRecurrence ? "Encerrando..." : "Encerrar Recorrência"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Exclusão */}
+      {deleteTx && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 mx-auto flex items-center justify-center">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-900 text-lg">
+                {deleteTx.isRecurring ? "Lançamento Recorrente" : "Excluir Lançamento?"}
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                {deleteTx.isRecurring
+                  ? `"${deleteTx.description}" é uma movimentação recorrente. Você pode apenas encerrar a recorrência (mantendo o histórico contábil) ou excluir o registro definitivamente do sistema.`
+                  : `Deseja realmente excluir "${deleteTx.description}"? Esta ação é irreversível e atualizará imediatamente o saldo das contas.`}
+              </p>
+            </div>
+
+            {deleteTx.isRecurring ? (
+              <div className="space-y-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => handleStopRecurrenceDirect(deleteTx.id)}
+                  disabled={isStoppingRecurrence || isDeleting}
+                  className="w-full py-2.5 px-3 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-xl border border-blue-200 transition-colors cursor-pointer"
+                >
+                  {isStoppingRecurrence ? "Encerrando..." : "Apenas Encerrar Recorrência (Manter histórico)"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => confirmDelete(deleteTx.id)}
+                  disabled={isStoppingRecurrence || isDeleting}
+                  className="w-full py-2.5 px-3 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md shadow-rose-600/20 transition-colors cursor-pointer"
+                >
+                  {isDeleting ? "Excluindo..." : "Excluir Definitivamente"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeleteTx(null)}
+                  disabled={isStoppingRecurrence || isDeleting}
+                  className="w-full py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setDeleteTx(null)}
+                  disabled={isDeleting}
+                  className="flex-1 py-2.5 text-xs font-semibold text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => confirmDelete(deleteTx.id)}
+                  disabled={isDeleting}
+                  className="flex-1 py-2.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md shadow-rose-600/20"
+                >
+                  {isDeleting ? "Excluindo..." : "Sim, Excluir"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

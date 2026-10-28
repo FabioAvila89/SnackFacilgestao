@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, createAuditLog, getClientIp } from "@/lib/auth";
 import { z } from "zod";
 
 const updateTransactionSchema = z.object({
@@ -11,6 +11,11 @@ const updateTransactionSchema = z.object({
   accountId: z.string().min(1).optional(),
   categoryId: z.string().min(1).optional(),
   notes: z.string().nullable().optional(),
+  status: z.enum(["PAID", "PENDING"]).optional(),
+  dueDate: z.string().nullable().optional(),
+  supplierId: z.string().nullable().optional(),
+  isRecurring: z.boolean().optional(),
+  recurrenceFrequency: z.enum(["MONTHLY", "WEEKLY", "YEARLY"]).nullable().optional(),
 });
 
 export async function PUT(
@@ -54,6 +59,34 @@ export async function PUT(
     if (parsed.data.amountCents) updateData.amountCents = parsed.data.amountCents;
     if (parsed.data.notes !== undefined) updateData.notes = parsed.data.notes;
 
+    if (parsed.data.status !== undefined) {
+      updateData.status = parsed.data.status;
+      if (parsed.data.status === "PAID") {
+        updateData.paidAt = new Date();
+      } else {
+        updateData.paidAt = null;
+      }
+    }
+
+    if (parsed.data.dueDate !== undefined) {
+      if (parsed.data.dueDate) {
+        const d = new Date(parsed.data.dueDate);
+        d.setUTCHours(12, 0, 0, 0);
+        updateData.dueDate = d;
+      } else {
+        updateData.dueDate = null;
+      }
+    }
+
+    if (parsed.data.supplierId !== undefined) {
+      updateData.supplierId = parsed.data.supplierId || null;
+    }
+
+    if (parsed.data.isRecurring !== undefined) {
+      updateData.isRecurring = parsed.data.isRecurring;
+      updateData.recurrenceFrequency = parsed.data.isRecurring ? (parsed.data.recurrenceFrequency || "MONTHLY") : null;
+    }
+
     if (parsed.data.date) {
       const d = new Date(parsed.data.date);
       d.setUTCHours(12, 0, 0, 0);
@@ -95,9 +128,23 @@ export async function PUT(
       include: {
         account: true,
         category: true,
+        supplier: true,
         createdBy: { select: { id: true, name: true, email: true } },
         updatedBy: { select: { id: true, name: true, email: true } },
       },
+    });
+
+    await createAuditLog({
+      action: "USER_UPDATED",
+      userId: user.userId,
+      userName: user.name,
+      details: `Lançamento "${updated.description}" atualizado${
+        parsed.data.isRecurring !== undefined
+          ? ` (recorrência: ${parsed.data.isRecurring ? "ativada" : "encerrada"})`
+          : ""
+      }`,
+      organizationId: user.organizationId,
+      ipAddress: getClientIp(req),
     });
 
     return NextResponse.json({ transaction: updated });
@@ -105,6 +152,14 @@ export async function PUT(
     console.error("Erro ao atualizar lançamento:", error);
     return NextResponse.json({ error: "Erro ao atualizar lançamento." }, { status: 500 });
   }
+}
+
+export async function PATCH(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
+  // Reutiliza o fluxo do PUT
+  return PUT(req, { params });
 }
 
 export async function DELETE(
@@ -133,6 +188,15 @@ export async function DELETE(
 
     await prisma.transaction.delete({
       where: { id: params.id },
+    });
+
+    await createAuditLog({
+      action: "USER_UPDATED",
+      userId: user.userId,
+      userName: user.name,
+      details: `Lançamento "${existing.description}" excluído`,
+      organizationId: user.organizationId,
+      ipAddress: getClientIp(req),
     });
 
     return NextResponse.json({ success: true, message: "Lançamento excluído com sucesso." });

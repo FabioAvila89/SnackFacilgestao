@@ -37,6 +37,21 @@ describe("1. Cálculo de saldo de conta", () => {
     const result = calculateAccountBalance(50000, []);
     expect(result.currentBalanceCents).toBe(50000);
   });
+
+  it("não altera o saldo realizado quando a movimentação está com status PENDING", () => {
+    const initialBalance = 100000; // R$ 1.000,00
+    const transactions = [
+      { kind: "INCOME" as const, amountCents: 50000, status: "PAID" },
+      { kind: "EXPENSE" as const, amountCents: 20000, status: "PENDING" }, // a pagar - não afeta saldo
+      { kind: "INCOME" as const, amountCents: 30000, status: "PENDING" }, // a receber - não afeta saldo
+    ];
+
+    const result = calculateAccountBalance(initialBalance, transactions);
+
+    expect(result.currentBalanceCents).toBe(150000); // 1000 + 500
+    expect(result.pendingExpenseCents).toBe(20000);
+    expect(result.pendingIncomeCents).toBe(30000);
+  });
 });
 
 describe("2. Agregação Entradas x Saídas por mês (com meses vazios preenchidos com zero)", () => {

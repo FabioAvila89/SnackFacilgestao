@@ -11,14 +11,23 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const search = url.searchParams.get("search")?.trim() || "";
   const kind = url.searchParams.get("kind");
+  const status = url.searchParams.get("status");
   const accountId = url.searchParams.get("accountId");
   const categoryId = url.searchParams.get("categoryId");
   const startDateStr = url.searchParams.get("startDate");
   const endDateStr = url.searchParams.get("endDate");
 
+  const isRecurring = url.searchParams.get("isRecurring");
+
   const where: any = { organizationId: user.organizationId };
 
   if (kind === "INCOME" || kind === "EXPENSE") where.kind = kind;
+  if (status === "PAID" || status === "PENDING") where.status = status;
+  if (status === "RECURRING" || isRecurring === "true") {
+    where.isRecurring = true;
+  } else if (isRecurring === "false") {
+    where.isRecurring = false;
+  }
   if (accountId) where.accountId = accountId;
 
   if (categoryId) {
@@ -62,6 +71,7 @@ export async function GET(req: Request) {
       category: {
         include: { parent: true },
       },
+      supplier: true,
       createdBy: {
         select: { name: true, email: true },
       },
@@ -73,9 +83,12 @@ export async function GET(req: Request) {
 
   worksheet.columns = [
     { header: "Data", key: "date", width: 14 },
+    { header: "Vencimento", key: "dueDate", width: 14 },
+    { header: "Status", key: "status", width: 14 },
     { header: "Tipo", key: "kind", width: 12 },
     { header: "Valor (R$)", key: "amount", width: 16 },
     { header: "Descrição", key: "description", width: 35 },
+    { header: "Fornecedor", key: "supplier", width: 25 },
     { header: "Categoria", key: "category", width: 25 },
     { header: "Subcategoria", key: "subcategory", width: 25 },
     { header: "Conta", key: "account", width: 20 },
@@ -95,12 +108,23 @@ export async function GET(req: Request) {
     const isSub = !!t.category.parentId;
     const catName = isSub ? t.category.parent?.name || "" : t.category.name;
     const subName = isSub ? t.category.name : "";
+    const statusLabel =
+      t.status === "PAID"
+        ? t.kind === "INCOME"
+          ? "Recebido"
+          : "Pago"
+        : t.kind === "INCOME"
+        ? "A Receber"
+        : "A Pagar";
 
     worksheet.addRow({
       date: formatDateToBR(t.date),
+      dueDate: t.dueDate ? formatDateToBR(t.dueDate) : "",
+      status: statusLabel,
       kind: t.kind === "INCOME" ? "Entrada" : "Saída",
       amount: t.amountCents / 100,
       description: t.description,
+      supplier: t.supplier?.name || "",
       category: catName,
       subcategory: subName,
       account: t.account.name,

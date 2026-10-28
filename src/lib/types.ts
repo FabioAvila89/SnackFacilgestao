@@ -2,6 +2,10 @@ export type AccountType = "BANK" | "CASH" | "CARD";
 
 export type TransactionKind = "INCOME" | "EXPENSE";
 
+export type TransactionStatus = "PAID" | "PENDING";
+
+export type RecurrenceFrequency = "MONTHLY" | "WEEKLY" | "YEARLY";
+
 export type DreLine =
   | "RECEITA_BRUTA"
   | "DEDUCOES"
@@ -12,6 +16,20 @@ export type DreLine =
   | "IMPOSTOS_LUCRO"
   | "FORA_DRE";
 
+export interface Supplier {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string | null;
+  document?: string | null;
+  notes?: string | null;
+  active: boolean;
+  organizationId: string;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+  transactionCount?: number;
+}
+
 export interface AccountWithBalance {
   id: string;
   name: string;
@@ -20,6 +38,8 @@ export interface AccountWithBalance {
   currentBalanceCents: number;
   totalIncomeCents: number;
   totalExpenseCents: number;
+  pendingIncomeCents?: number;
+  pendingExpenseCents?: number;
   active: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -104,3 +124,32 @@ export interface DreReport {
     rows: { key: string; cents: number }[];
   }[];
 }
+
+export interface TransactionItem {
+  id: string;
+  date: string | Date;
+  dueDate?: string | Date | null;
+  paidAt?: string | Date | null;
+  status: TransactionStatus;
+  kind: TransactionKind;
+  amountCents: number;
+  description: string;
+  accountId: string;
+  categoryId: string;
+  supplierId?: string | null;
+  notes?: string | null;
+  isRecurring: boolean;
+  recurrenceFrequency?: RecurrenceFrequency | null;
+  isInstallment: boolean;
+  installmentNumber?: number | null;
+  totalInstallments?: number | null;
+  installmentGroupId?: string | null;
+  account?: { id: string; name: string };
+  category?: { id: string; name: string; parentId?: string | null; parent?: { id: string; name: string } | null };
+  supplier?: Supplier | null;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+  createdBy?: { id: string; name: string; email?: string } | null;
+  updatedBy?: { id: string; name: string; email?: string } | null;
+}
+

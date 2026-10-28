@@ -13,6 +13,7 @@ import {
   FileSpreadsheet,
   Landmark,
   Tags,
+  Truck,
   FileUp,
   LogOut,
   Plus,
@@ -38,6 +39,7 @@ const baseNavItems = [
   { href: "/relatorios/categorias", label: "Gastos por Categoria", icon: PieChart },
   { href: "/relatorios/dre", label: "DRE", icon: FileSpreadsheet },
   { href: "/contas", label: "Contas", icon: Landmark },
+  { href: "/fornecedores", label: "Fornecedores", icon: Truck },
   { href: "/categorias", label: "Categorias", icon: Tags },
   { href: "/importar-exportar", label: "Importar / Exportar", icon: FileUp },
 ];

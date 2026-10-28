@@ -232,10 +232,14 @@ export async function POST(req: Request) {
         role: user.role,
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Erro no login:", error);
     return NextResponse.json(
-      { error: "Erro interno no servidor ao tentar autenticar." },
+      {
+        error: "Erro interno no servidor ao tentar autenticar.",
+        details: error?.message || String(error),
+        code: error?.code,
+      },
       { status: 500 }
     );
   }

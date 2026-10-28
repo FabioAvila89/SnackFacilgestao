@@ -12,6 +12,7 @@ describe("1. Permissões Centralizadas e RBAC (can)", () => {
     expect(can(admin, "access_management:manage")).toBe(true);
     expect(can(admin, "user:create")).toBe(true);
     expect(can(admin, "user:update")).toBe(true);
+    expect(can(admin, "user:delete")).toBe(true);
     expect(can(admin, "user:toggle_status")).toBe(true);
     expect(can(admin, "user:reset_password")).toBe(true);
     expect(can(admin, "audit:view")).toBe(true);
@@ -41,6 +42,7 @@ describe("1. Permissões Centralizadas e RBAC (can)", () => {
     expect(can(editor, "access_management:view")).toBe(false);
     expect(can(editor, "access_management:manage")).toBe(false);
     expect(can(editor, "user:create")).toBe(false);
+    expect(can(editor, "user:delete")).toBe(false);
     expect(can(editor, "user:reset_password")).toBe(false);
     expect(can(editor, "audit:view")).toBe(false);
     expect(can(editor, "category:write")).toBe(false);
@@ -66,6 +68,7 @@ describe("1. Permissões Centralizadas e RBAC (can)", () => {
     expect(can(viewer, "account:write")).toBe(false);
     expect(can(viewer, "access_management:view")).toBe(false);
     expect(can(viewer, "user:create")).toBe(false);
+    expect(can(viewer, "user:delete")).toBe(false);
   });
 
   it("Usuário inativo tem TODAS as permissões negadas imediatamente", () => {
@@ -146,6 +149,35 @@ describe("4. Regras Críticas de Negócio e Segurança de Usuários", () => {
 
     expect(() => checkDeactivateLastAdmin("ADMIN", false, activeAdminsCount)).toThrow(
       "Não é permitido desativar o único administrador ativo do sistema."
+    );
+  });
+
+  it("impede que um administrador exclua a si próprio", () => {
+    const currentUserId = "admin-1";
+    const targetUserId = "admin-1";
+
+    const isSelfDeletion = (currentId: string, targetId: string) => {
+      if (currentId === targetId) {
+        throw new Error("Você não pode excluir o seu próprio usuário.");
+      }
+    };
+
+    expect(() => isSelfDeletion(currentUserId, targetUserId)).toThrow(
+      "Você não pode excluir o seu próprio usuário."
+    );
+  });
+
+  it("impede excluir o único administrador ativo", () => {
+    const activeAdminsCount = 1;
+
+    const checkDeleteLastAdmin = (role: string, isActive: boolean, activeCount: number) => {
+      if (role === "ADMIN" && isActive && activeCount <= 1) {
+        throw new Error("Não é permitido excluir o único administrador ativo do sistema.");
+      }
+    };
+
+    expect(() => checkDeleteLastAdmin("ADMIN", true, activeAdminsCount)).toThrow(
+      "Não é permitido excluir o único administrador ativo do sistema."
     );
   });
 

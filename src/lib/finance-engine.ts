@@ -31,15 +31,23 @@ export interface RawAccountInput {
 
 /**
  * Calcula saldo de uma conta a partir do saldo inicial e transações
+ * Lançamentos com status "PENDING" não afetam o saldo realizado em conta/caixa.
  */
 export function calculateAccountBalance(
   initialBalanceCents: number,
-  transactions: { kind: "INCOME" | "EXPENSE"; amountCents: number }[]
+  transactions: { kind: "INCOME" | "EXPENSE"; amountCents: number; status?: string }[]
 ) {
   let income = 0;
   let expense = 0;
+  let pendingIncome = 0;
+  let pendingExpense = 0;
 
   for (const t of transactions) {
+    if (t.status === "PENDING") {
+      if (t.kind === "INCOME") pendingIncome += t.amountCents;
+      else if (t.kind === "EXPENSE") pendingExpense += t.amountCents;
+      continue;
+    }
     if (t.kind === "INCOME") {
       income += t.amountCents;
     } else if (t.kind === "EXPENSE") {
@@ -51,6 +59,8 @@ export function calculateAccountBalance(
     initialBalanceCents,
     totalIncomeCents: income,
     totalExpenseCents: expense,
+    pendingIncomeCents: pendingIncome,
+    pendingExpenseCents: pendingExpense,
     currentBalanceCents: initialBalanceCents + income - expense,
   };
 }
