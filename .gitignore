@@ -26,5 +26,6 @@ dist
 # Dumps e backups de dados
 scripts/dump.sql
 *.sql
+!prisma/migrations/**/*.sql
 
 *.tsbuildinfo

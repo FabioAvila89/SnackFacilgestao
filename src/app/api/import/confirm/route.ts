@@ -55,25 +55,37 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Nenhuma linha válida para importar." }, { status: 400 });
     }
 
-    // Grava no banco de dados em transação única
+    // Gravação em lote de alta performance utilizando createMany em chunks transacionais
+    const CHUNK_SIZE = 1000;
+    const records = rows.map((r) => {
+      const d = new Date(r.date);
+      d.setUTCHours(12, 0, 0, 0);
+      return {
+        date: d,
+        kind: r.kind,
+        amountCents: r.amountCents,
+        description: r.description.trim(),
+        accountId: r.accountId,
+        categoryId: r.categoryId,
+        notes: r.notes ? r.notes.trim() : null,
+        status: "PAID",
+        organizationId: user.organizationId,
+        createdById: user.userId,
+      };
+    });
+
     await prisma.$transaction(
-      rows.map((r) => {
-        const d = new Date(r.date);
-        d.setUTCHours(12, 0, 0, 0);
-        return prisma.transaction.create({
-          data: {
-            date: d,
-            kind: r.kind,
-            amountCents: r.amountCents,
-            description: r.description.trim(),
-            accountId: r.accountId,
-            categoryId: r.categoryId,
-            notes: r.notes || null,
-            organizationId: user.organizationId,
-            createdById: user.userId,
-          },
-        });
-      })
+      async (tx) => {
+        for (let i = 0; i < records.length; i += CHUNK_SIZE) {
+          const chunk = records.slice(i, i + CHUNK_SIZE);
+          await tx.transaction.createMany({
+            data: chunk,
+          });
+        }
+      },
+      {
+        timeout: 30000, // Proteção contra timeout em imports massivos
+      }
     );
 
     return NextResponse.json({

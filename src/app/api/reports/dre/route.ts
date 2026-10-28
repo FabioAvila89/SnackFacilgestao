@@ -76,23 +76,30 @@ export async function GET(req: Request) {
     prevLabel = `${monthNames[prevStart.getUTCMonth()]} / ${prevStart.getUTCFullYear()}`;
   }
 
-  // Busca lançamentos dos dois períodos
+  // Busca lançamentos realizados dos dois períodos com select estrito
   const allTx = await prisma.transaction.findMany({
     where: {
       organizationId: user.organizationId,
+      status: "PAID",
       date: {
         gte: prevStart,
         lte: curEnd,
       },
     },
-    include: {
-      account: { select: { id: true, name: true } },
+    select: {
+      id: true,
+      date: true,
+      kind: true,
+      amountCents: true,
+      description: true,
+      accountId: true,
+      account: { select: { name: true } },
+      categoryId: true,
       category: {
         select: {
-          id: true,
           name: true,
           parentId: true,
-          parent: { select: { id: true, name: true } },
+          parent: { select: { name: true } },
           dreLine: true,
         },
       },

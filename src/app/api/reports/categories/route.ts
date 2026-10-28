@@ -43,14 +43,22 @@ export async function GET(req: Request) {
   const transactions = await prisma.transaction.findMany({
     where: {
       organizationId: user.organizationId,
+      status: "PAID",
       kind,
       date: {
         gte: startDate,
         lte: endDate,
       },
     },
-    include: {
+    select: {
+      id: true,
+      date: true,
+      kind: true,
+      amountCents: true,
+      description: true,
+      accountId: true,
       account: { select: { id: true, name: true } },
+      categoryId: true,
       category: {
         select: {
           id: true,
