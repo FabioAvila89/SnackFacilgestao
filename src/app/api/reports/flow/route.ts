@@ -37,43 +37,52 @@ export async function GET(req: Request) {
     endDate = new Date(Date.UTC(currentYear, 11, 31, 23, 59, 59, 999));
   }
 
-  // 1. Calcula saldo acumulado antes do início do período
-  const accounts = await prisma.account.findMany({
-    where: { organizationId: user.organizationId },
-    select: { initialBalanceCents: true },
-  });
-  const sumInitialBalances = accounts.reduce((acc, a) => acc + a.initialBalanceCents, 0);
+  // Executa queries otimizadas em paralelo
+  const [accountsAgg, prevTotals, periodTransactions] = await Promise.all([
+    // 1. Soma dos saldos iniciais de todas as contas da organização
+    prisma.account.aggregate({
+      where: { organizationId: user.organizationId },
+      _sum: { initialBalanceCents: true },
+    }),
 
-  const prevTransactions = await prisma.transaction.findMany({
-    where: {
-      organizationId: user.organizationId,
-      date: { lt: startDate },
-    },
-    select: { kind: true, amountCents: true },
-  });
-
-  let balanceBeforePeriod = sumInitialBalances;
-  for (const t of prevTransactions) {
-    if (t.kind === "INCOME") balanceBeforePeriod += t.amountCents;
-    if (t.kind === "EXPENSE") balanceBeforePeriod -= t.amountCents;
-  }
-
-  // 2. Busca lançamentos dentro do período
-  const periodTransactions = await prisma.transaction.findMany({
-    where: {
-      organizationId: user.organizationId,
-      date: {
-        gte: startDate,
-        lte: endDate,
+    // 2. Soma de lançamentos anteriores ao período delegada ao PostgreSQL (evita Full Scan de histórico em memória)
+    prisma.transaction.groupBy({
+      by: ["kind"],
+      where: {
+        organizationId: user.organizationId,
+        status: "PAID",
+        date: { lt: startDate },
       },
-    },
-    select: {
-      date: true,
-      kind: true,
-      amountCents: true,
-    },
-    orderBy: { date: "asc" },
-  });
+      _sum: { amountCents: true },
+    }),
+
+    // 3. Lançamentos realizados dentro do período com select estrito
+    prisma.transaction.findMany({
+      where: {
+        organizationId: user.organizationId,
+        status: "PAID",
+        date: {
+          gte: startDate,
+          lte: endDate,
+        },
+      },
+      select: {
+        date: true,
+        kind: true,
+        amountCents: true,
+      },
+      orderBy: { date: "asc" },
+    }),
+  ]);
+
+  // Calcula saldo antes do período em O(1)
+  const sumInitialBalances = accountsAgg._sum.initialBalanceCents || 0;
+  let balanceBeforePeriod = sumInitialBalances;
+  for (const t of prevTotals) {
+    const sum = t._sum.amountCents || 0;
+    if (t.kind === "INCOME") balanceBeforePeriod += sum;
+    if (t.kind === "EXPENSE") balanceBeforePeriod -= sum;
+  }
 
   const monthlyFlow = calculateMonthlyFlow(
     periodTransactions as any,

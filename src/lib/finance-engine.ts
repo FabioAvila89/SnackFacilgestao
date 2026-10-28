@@ -42,26 +42,30 @@ export function calculateAccountBalance(
   let pendingIncome = 0;
   let pendingExpense = 0;
 
-  for (const t of transactions) {
+  for (let i = 0; i < transactions.length; i++) {
+    const t = transactions[i];
+    const amount = Math.round(t.amountCents);
     if (t.status === "PENDING") {
-      if (t.kind === "INCOME") pendingIncome += t.amountCents;
-      else if (t.kind === "EXPENSE") pendingExpense += t.amountCents;
+      if (t.kind === "INCOME") pendingIncome += amount;
+      else if (t.kind === "EXPENSE") pendingExpense += amount;
       continue;
     }
     if (t.kind === "INCOME") {
-      income += t.amountCents;
+      income += amount;
     } else if (t.kind === "EXPENSE") {
-      expense += t.amountCents;
+      expense += amount;
     }
   }
 
+  const roundedInitial = Math.round(initialBalanceCents);
+
   return {
-    initialBalanceCents,
+    initialBalanceCents: roundedInitial,
     totalIncomeCents: income,
     totalExpenseCents: expense,
     pendingIncomeCents: pendingIncome,
     pendingExpenseCents: pendingExpense,
-    currentBalanceCents: initialBalanceCents + income - expense,
+    currentBalanceCents: roundedInitial + income - expense,
   };
 }
 
@@ -76,7 +80,8 @@ export function calculateSafeVariationPercent(
     if (current === 0) return 0;
     return null; // Divisão por zero -> retorna null ("—")
   }
-  return ((current - previous) / Math.abs(previous)) * 100;
+  const raw = ((current - previous) / Math.abs(previous)) * 100;
+  return Math.round(raw * 100) / 100;
 }
 
 /**
@@ -87,7 +92,8 @@ export function calculateSafeMarginPercent(
   netRevenue: number
 ): number | null {
   if (netRevenue <= 0) return null;
-  return (value / netRevenue) * 100;
+  const raw = (value / netRevenue) * 100;
+  return Math.round(raw * 100) / 100;
 }
 
 /**
@@ -112,16 +118,18 @@ export function calculateMonthlyFlow(
     cur.setUTCMonth(cur.getUTCMonth() + 1);
   }
 
-  // Agrega as transações
-  for (const t of transactions) {
+  // Agrega as transações em passagem única O(N)
+  for (let i = 0; i < transactions.length; i++) {
+    const t = transactions[i];
     const d = new Date(t.date);
     const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-    if (monthsMap.has(key)) {
-      const entry = monthsMap.get(key)!;
+    const entry = monthsMap.get(key);
+    if (entry) {
+      const amt = Math.round(t.amountCents);
       if (t.kind === "INCOME") {
-        entry.income += t.amountCents;
+        entry.income += amt;
       } else {
-        entry.expense += t.amountCents;
+        entry.expense += amt;
       }
     }
   }
@@ -131,7 +139,7 @@ export function calculateMonthlyFlow(
     "jul", "ago", "set", "out", "nov", "dez",
   ];
 
-  let accumulated = startingBalanceBeforePeriodCents;
+  let accumulated = Math.round(startingBalanceBeforePeriodCents);
   const result: MonthlyFlowItem[] = [];
 
   for (const [monthKey, data] of Array.from(monthsMap.entries()).sort()) {
@@ -155,13 +163,13 @@ export function calculateMonthlyFlow(
 
 /**
  * Agrega despesas por categoria de nível 1 com detalhamento de subcategorias e percentuais
+ * Otimizado para O(N) em passagem única
  */
 export function calculateExpensesByCategory(
   transactions: RawTransactionInput[],
   kindFilter: "EXPENSE" | "INCOME" = "EXPENSE"
 ): { items: CategoryExpenseItem[]; totalCents: number } {
-  const filtered = transactions.filter((t) => t.kind === kindFilter);
-  const totalCents = filtered.reduce((acc, t) => acc + t.amountCents, 0);
+  let totalCents = 0;
 
   // Mapeia por Categoria Pai
   const groupMap = new Map<
@@ -174,31 +182,39 @@ export function calculateExpensesByCategory(
     }
   >();
 
-  for (const t of filtered) {
-    // Se a categoria tem pai, a categoria pai é a principal e ela é a subcategoria
+  // Passagem única O(N): filtra, totaliza e agrupa simultaneamente
+  for (let i = 0; i < transactions.length; i++) {
+    const t = transactions[i];
+    if (t.kind !== kindFilter) continue;
+
+    const amt = Math.round(t.amountCents);
+    totalCents += amt;
+
     const isSubcategory = !!t.categoryParentId;
     const parentId = isSubcategory ? t.categoryParentId! : t.categoryId;
     const parentName = isSubcategory ? t.categoryParentName || "Categoria" : t.categoryName || "Categoria";
 
-    if (!groupMap.has(parentId)) {
-      groupMap.set(parentId, {
+    let group = groupMap.get(parentId);
+    if (!group) {
+      group = {
         categoryId: parentId,
         categoryName: parentName,
         amountCents: 0,
         subcategories: new Map(),
-      });
+      };
+      groupMap.set(parentId, group);
     }
-
-    const group = groupMap.get(parentId)!;
-    group.amountCents += t.amountCents;
+    group.amountCents += amt;
 
     if (isSubcategory) {
       const subId = t.categoryId;
       const subName = t.categoryName || "Subcategoria";
-      if (!group.subcategories.has(subId)) {
-        group.subcategories.set(subId, { id: subId, name: subName, amountCents: 0 });
+      let sub = group.subcategories.get(subId);
+      if (!sub) {
+        sub = { id: subId, name: subName, amountCents: 0 };
+        group.subcategories.set(subId, sub);
       }
-      group.subcategories.get(subId)!.amountCents += t.amountCents;
+      sub.amountCents += amt;
     }
   }
 
@@ -210,7 +226,7 @@ export function calculateExpensesByCategory(
           id: sub.id,
           name: sub.name,
           amountCents: sub.amountCents,
-          percentage: g.amountCents > 0 ? (sub.amountCents / g.amountCents) * 100 : 0,
+          percentage: g.amountCents > 0 ? Math.round(((sub.amountCents / g.amountCents) * 100) * 100) / 100 : 0,
         }))
         .sort((a, b) => b.amountCents - a.amountCents);
 
@@ -218,7 +234,7 @@ export function calculateExpensesByCategory(
         categoryId: g.categoryId,
         categoryName: g.categoryName,
         amountCents: g.amountCents,
-        percentage: Number(pct.toFixed(2)),
+        percentage: Math.round(pct * 100) / 100,
         subcategories: subList,
       };
     })
@@ -261,27 +277,29 @@ function addTransactionToLineAcc(
   t: RawTransactionInput,
   dateFormatted: string
 ) {
-  acc.totalCents += t.amountCents;
+  const amt = Math.round(t.amountCents);
+  acc.totalCents += amt;
 
   const parentId = t.categoryParentId || t.categoryId;
   const parentName = t.categoryParentName || t.categoryName || "Geral";
 
-  if (!acc.categories.has(parentId)) {
-    acc.categories.set(parentId, {
+  let catGroup = acc.categories.get(parentId);
+  if (!catGroup) {
+    catGroup = {
       categoryId: parentId,
       categoryName: parentName,
       amountCents: 0,
       items: [],
-    });
+    };
+    acc.categories.set(parentId, catGroup);
   }
 
-  const catGroup = acc.categories.get(parentId)!;
-  catGroup.amountCents += t.amountCents;
+  catGroup.amountCents += amt;
   catGroup.items.push({
     id: t.id,
     description: t.description,
     date: dateFormatted,
-    amountCents: t.amountCents,
+    amountCents: amt,
     accountName: t.accountName || "Conta",
   });
 }

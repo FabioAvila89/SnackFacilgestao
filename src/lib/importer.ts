@@ -163,6 +163,34 @@ export function validateImportCandidates(
 ): ImportPreviewResult {
   const validatedRows: ValidatedImportRow[] = [];
 
+  // Otimização O(1) de Lookups com Maps indexados por chave normalizada
+  const accountMap = new Map<string, KnownAccountLookup>();
+  for (let i = 0; i < knownAccounts.length; i++) {
+    const a = knownAccounts[i];
+    accountMap.set(a.name.trim().toLowerCase(), a);
+  }
+
+  const catMap = new Map<string, KnownCategoryLookup>();
+  const subCatWithParentMap = new Map<string, KnownCategoryLookup>();
+  const subCatNameMap = new Map<string, KnownCategoryLookup>();
+
+  for (let i = 0; i < knownCategories.length; i++) {
+    const c = knownCategories[i];
+    const nameLow = c.name.trim().toLowerCase();
+    if (!catMap.has(nameLow)) {
+      catMap.set(nameLow, c);
+    }
+    if (c.parentId) {
+      if (!subCatNameMap.has(nameLow)) {
+        subCatNameMap.set(nameLow, c);
+      }
+      if (c.parentName) {
+        const key = `${c.parentName.trim().toLowerCase()}|${nameLow}`;
+        subCatWithParentMap.set(key, c);
+      }
+    }
+  }
+
   for (const candidate of candidates) {
     const errors: string[] = [];
 
@@ -203,9 +231,7 @@ export function validateImportCandidates(
     if (!candidate.contaRaw) {
       errors.push("Conta é obrigatória.");
     } else {
-      matchedAccount = knownAccounts.find(
-        (a) => a.name.trim().toLowerCase() === candidate.contaRaw.trim().toLowerCase()
-      );
+      matchedAccount = accountMap.get(candidate.contaRaw.trim().toLowerCase());
       if (!matchedAccount) {
         errors.push(`Conta "${candidate.contaRaw}" não encontrada.`);
       } else if (!matchedAccount.active) {
@@ -223,28 +249,15 @@ export function validateImportCandidates(
 
       if (subName) {
         // Procurar por subcategoria cujo pai tenha o nome da categoria
-        matchedCategory = knownCategories.find((c) => {
-          if (c.parentId && c.name.toLowerCase() === subName) {
-            return c.parentName?.toLowerCase() === catName;
-          }
-          return false;
-        });
-
-        if (!matchedCategory) {
-          // Tenta achar subcategoria apenas pelo nome se não bater o pai
-          matchedCategory = knownCategories.find(
-            (c) => c.parentId && c.name.toLowerCase() === subName
-          );
-        }
+        const key = `${catName}|${subName}`;
+        matchedCategory = subCatWithParentMap.get(key) || subCatNameMap.get(subName);
 
         if (!matchedCategory) {
           errors.push(`Subcategoria "${candidate.subcategoriaRaw}" não encontrada para a categoria "${candidate.categoriaRaw}".`);
         }
       } else {
         // Busca categoria de nível 1 ou única correspondência
-        matchedCategory = knownCategories.find(
-          (c) => c.name.toLowerCase() === catName
-        );
+        matchedCategory = catMap.get(catName);
         if (!matchedCategory) {
           errors.push(`Categoria "${candidate.categoriaRaw}" não encontrada.`);
         }

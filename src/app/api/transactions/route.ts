@@ -36,7 +36,7 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
-  const limit = Math.max(1, Math.min(100, parseInt(url.searchParams.get("limit") || "25", 10)));
+  const limit = Math.max(1, Math.min(200, parseInt(url.searchParams.get("limit") || "25", 10)));
   const search = url.searchParams.get("search")?.trim() || "";
   const kind = url.searchParams.get("kind");
   const status = url.searchParams.get("status"); // ALL | PAID | PENDING | RECURRING
@@ -110,27 +110,56 @@ export async function GET(req: Request) {
     ];
   }
 
-  // Busca totais do filtro aplicado (agregação rápida)
-  const totalsRaw = await prisma.transaction.groupBy({
-    by: ["kind", "status"],
-    where,
-    _sum: {
-      amountCents: true,
-    },
-    _count: {
-      id: true,
-    },
-  });
+  // Executa em paralelo (Promise.all) no PostgreSQL:
+  // 1. Busca paginada (findMany com skip e take)
+  // 2. Contagem total de registros do filtro (count)
+  // 3. Totais agregados de Entradas e Saídas de todo o filtro (groupBy)
+  const [transactions, totalCount, totalsRaw] = await Promise.all([
+    prisma.transaction.findMany({
+      where,
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+      skip: (page - 1) * limit,
+      take: limit,
+      include: {
+        account: { select: { id: true, name: true } },
+        category: {
+          select: {
+            id: true,
+            name: true,
+            parentId: true,
+            parent: { select: { id: true, name: true } },
+          },
+        },
+        supplier: {
+          select: { id: true, name: true, phone: true },
+        },
+        createdBy: {
+          select: { id: true, name: true, email: true },
+        },
+        updatedBy: {
+          select: { id: true, name: true, email: true },
+        },
+      },
+    }),
+    prisma.transaction.count({
+      where,
+    }),
+    prisma.transaction.groupBy({
+      by: ["kind", "status"],
+      where,
+      _sum: {
+        amountCents: true,
+      },
+    }),
+  ]);
 
   let totalIncomeCents = 0;
   let totalExpenseCents = 0;
   let pendingIncomeCents = 0;
   let pendingExpenseCents = 0;
-  let totalCount = 0;
 
   for (const t of totalsRaw) {
     const sum = t._sum.amountCents || 0;
-    totalCount += t._count.id;
     if (t.kind === "INCOME") {
       if (t.status === "PENDING") pendingIncomeCents += sum;
       else totalIncomeCents += sum;
@@ -141,34 +170,6 @@ export async function GET(req: Request) {
   }
 
   const resultCents = totalIncomeCents - totalExpenseCents;
-
-  // Busca lista paginada
-  const transactions = await prisma.transaction.findMany({
-    where,
-    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-    skip: (page - 1) * limit,
-    take: limit,
-    include: {
-      account: { select: { id: true, name: true } },
-      category: {
-        select: {
-          id: true,
-          name: true,
-          parentId: true,
-          parent: { select: { id: true, name: true } },
-        },
-      },
-      supplier: {
-        select: { id: true, name: true, phone: true },
-      },
-      createdBy: {
-        select: { id: true, name: true, email: true },
-      },
-      updatedBy: {
-        select: { id: true, name: true, email: true },
-      },
-    },
-  });
 
   return NextResponse.json({
     transactions,
@@ -278,46 +279,56 @@ export async function POST(req: Request) {
     dateObj.setUTCHours(12, 0, 0, 0);
 
     // =========================================================================
-    // LANÇAMENTO PARCELADO (Cria N lançamentos vinculados)
+    // LANÇAMENTO PARCELADO (Cria N lançamentos vinculados em lote otimizado)
     // =========================================================================
     if (isInstallment && installments && installments.length > 1) {
       const installmentGroupId = crypto.randomUUID();
       const numInstallments = installments.length;
 
-      const createdTransactions = await prisma.$transaction(
-        installments.map((inst) => {
-          const dueObj = new Date(inst.dueDate);
-          dueObj.setUTCHours(12, 0, 0, 0);
+      const batchData = installments.map((inst) => {
+        const dueObj = new Date(inst.dueDate);
+        dueObj.setUTCHours(12, 0, 0, 0);
 
-          return prisma.transaction.create({
-            data: {
-              date: dateObj,
-              dueDate: dueObj,
-              paidAt: inst.status === "PAID" ? new Date() : null,
-              status: inst.status,
-              kind,
-              amountCents: inst.amountCents,
-              description: `${description.trim()} (${inst.installmentNumber}/${numInstallments})`,
-              accountId,
-              categoryId,
-              notes: notes ? notes.trim() : null,
-              supplierId: supplierId || null,
-              isInstallment: true,
-              installmentNumber: inst.installmentNumber,
-              totalInstallments: numInstallments,
-              installmentGroupId,
-              organizationId: user.organizationId,
-              createdById: user.userId,
-            },
-            include: {
-              account: true,
-              category: true,
-              supplier: true,
-              createdBy: { select: { id: true, name: true, email: true } },
-            },
-          });
-        })
-      );
+        return {
+          date: dateObj,
+          dueDate: dueObj,
+          paidAt: inst.status === "PAID" ? new Date() : null,
+          status: inst.status,
+          kind,
+          amountCents: inst.amountCents,
+          description: `${description.trim()} (${inst.installmentNumber}/${numInstallments})`,
+          accountId,
+          categoryId,
+          notes: notes ? notes.trim() : null,
+          supplierId: supplierId || null,
+          isInstallment: true,
+          installmentNumber: inst.installmentNumber,
+          totalInstallments: numInstallments,
+          installmentGroupId,
+          organizationId: user.organizationId,
+          createdById: user.userId,
+        };
+      });
+
+      // Grava todas as parcelas em uma única operação SQL em lote
+      await prisma.transaction.createMany({
+        data: batchData,
+      });
+
+      // Busca registros criados para manter formato de resposta da API
+      const createdTransactions = await prisma.transaction.findMany({
+        where: {
+          installmentGroupId,
+          organizationId: user.organizationId,
+        },
+        orderBy: { installmentNumber: "asc" },
+        include: {
+          account: true,
+          category: true,
+          supplier: true,
+          createdBy: { select: { id: true, name: true, email: true } },
+        },
+      });
 
       return NextResponse.json(
         { transactions: createdTransactions, message: `${createdTransactions.length} parcelas criadas com sucesso.` },

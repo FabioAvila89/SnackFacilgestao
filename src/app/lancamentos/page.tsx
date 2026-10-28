@@ -24,6 +24,27 @@ import {
 } from "lucide-react";
 import { TransactionModal } from "@/components/TransactionModal";
 
+function getPageNumbers(currentPage: number, totalPages: number): number[] {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }
+  const pages: number[] = [];
+  pages.push(1);
+  if (currentPage > 3) {
+    pages.push(-1); // indicador de reticências
+  }
+  const start = Math.max(2, currentPage - 1);
+  const end = Math.min(totalPages - 1, currentPage + 1);
+  for (let i = start; i <= end; i++) {
+    pages.push(i);
+  }
+  if (currentPage < totalPages - 2) {
+    pages.push(-1); // indicador de reticências
+  }
+  pages.push(totalPages);
+  return pages;
+}
+
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [totals, setTotals] = useState({
@@ -38,12 +59,21 @@ export default function TransactionsPage() {
 
   // Filtros
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [kind, setKind] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "PAID" | "PENDING" | "RECURRING">("ALL");
   const [accountId, setAccountId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+
+  // Debounce de 300ms no campo de busca para evitar enxurrada de requests
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [search]);
 
   // Dados auxiliares para selects
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -81,13 +111,18 @@ export default function TransactionsPage() {
     loadFilters();
   }, []);
 
-  const fetchTransactions = async (pageToFetch = pagination.page) => {
+  const fetchTransactions = async (
+    pageToFetch = pagination.page,
+    limitToFetch = pagination.limit,
+    searchOverride?: string
+  ) => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       params.set("page", String(pageToFetch));
-      params.set("limit", String(pagination.limit));
-      if (search) params.set("search", search);
+      params.set("limit", String(limitToFetch));
+      const s = searchOverride !== undefined ? searchOverride : debouncedSearch;
+      if (s) params.set("search", s);
       if (kind !== "ALL") params.set("kind", kind);
       if (statusFilter === "RECURRING") {
         params.set("isRecurring", "true");
@@ -113,7 +148,14 @@ export default function TransactionsPage() {
           pendingExpenseCents: 0,
         }
       );
-      setPagination(json.pagination || { page: 1, limit: 25, totalPages: 1, totalCount: 0 });
+      setPagination(
+        json.pagination || {
+          page: pageToFetch,
+          limit: limitToFetch,
+          totalPages: 1,
+          totalCount: 0,
+        }
+      );
     } catch (err) {
       console.error(err);
     } finally {
@@ -122,12 +164,12 @@ export default function TransactionsPage() {
   };
 
   useEffect(() => {
-    fetchTransactions(1);
-  }, [kind, statusFilter, accountId, categoryId, startDate, endDate]);
+    fetchTransactions(1, pagination.limit, debouncedSearch);
+  }, [debouncedSearch, kind, statusFilter, accountId, categoryId, startDate, endDate]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchTransactions(1);
+    fetchTransactions(1, pagination.limit, search);
   };
 
   const handleEdit = (tx: any) => {
@@ -686,30 +728,97 @@ export default function TransactionsPage() {
             </table>
           </div>
 
-          {/* Paginação */}
-          {pagination.totalPages > 1 && (
-            <div className="p-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+          {/* Barra de Paginação Server-Side Otimizada */}
+          <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 bg-slate-50/50">
+            {/* Contagem de registros e Seletor de Itens por Página */}
+            <div className="flex flex-wrap items-center gap-4">
               <span>
-                Página <b>{pagination.page}</b> de <b>{pagination.totalPages}</b> ({pagination.totalCount} lançamentos)
+                {pagination.totalCount > 0 ? (
+                  <>
+                    Mostrando{" "}
+                    <strong className="text-slate-800">
+                      {(pagination.page - 1) * pagination.limit + 1}
+                    </strong>{" "}
+                    a{" "}
+                    <strong className="text-slate-800">
+                      {Math.min(pagination.page * pagination.limit, pagination.totalCount)}
+                    </strong>{" "}
+                    de{" "}
+                    <strong className="text-slate-800">{pagination.totalCount}</strong> lançamentos
+                  </>
+                ) : (
+                  "Nenhum lançamento encontrado"
+                )}
               </span>
-              <div className="flex items-center gap-2">
-                <button
-                  disabled={pagination.page <= 1}
-                  onClick={() => fetchTransactions(pagination.page - 1)}
-                  className="p-2 border border-slate-200 rounded-lg disabled:opacity-30 hover:bg-slate-50 cursor-pointer"
+
+              <div className="flex items-center gap-1.5 pl-2 sm:border-l sm:border-slate-200">
+                <span className="text-slate-400">Exibir:</span>
+                <select
+                  value={pagination.limit}
+                  onChange={(e) => {
+                    const newLimit = Number(e.target.value);
+                    setPagination((prev) => ({ ...prev, limit: newLimit, page: 1 }));
+                    fetchTransactions(1, newLimit);
+                  }}
+                  className="px-2 py-1 bg-white border border-slate-300 rounded-lg text-slate-700 font-semibold focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 cursor-pointer"
                 >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <button
-                  disabled={pagination.page >= pagination.totalPages}
-                  onClick={() => fetchTransactions(pagination.page + 1)}
-                  className="p-2 border border-slate-200 rounded-lg disabled:opacity-30 hover:bg-slate-50 cursor-pointer"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+                <span className="text-slate-400">por página</span>
               </div>
             </div>
-          )}
+
+            {/* Controles de Navegação por Páginas */}
+            {pagination.totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={pagination.page <= 1}
+                  onClick={() => fetchTransactions(pagination.page - 1, pagination.limit)}
+                  className="px-2.5 py-1.5 border border-slate-200 bg-white rounded-lg disabled:opacity-40 hover:bg-slate-100 text-slate-700 font-medium transition-colors flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Anterior</span>
+                </button>
+
+                {/* Números de página */}
+                <div className="flex items-center gap-1 mx-1">
+                  {getPageNumbers(pagination.page, pagination.totalPages).map((p, idx) =>
+                    p === -1 ? (
+                      <span key={`dots-${idx}`} className="px-1 text-slate-400 select-none">
+                        ...
+                      </span>
+                    ) : (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => fetchTransactions(p, pagination.limit)}
+                        className={`w-7 h-7 flex items-center justify-center rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          p === pagination.page
+                            ? "bg-orange-600 text-white shadow-sm shadow-orange-600/30"
+                            : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-100"
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    )
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  disabled={pagination.page >= pagination.totalPages}
+                  onClick={() => fetchTransactions(pagination.page + 1, pagination.limit)}
+                  className="px-2.5 py-1.5 border border-slate-200 bg-white rounded-lg disabled:opacity-40 hover:bg-slate-100 text-slate-700 font-medium transition-colors flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  <span className="hidden sm:inline">Próxima</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

@@ -58,6 +58,8 @@ model Account {
   transactions        Transaction[]
 
   @@index([organizationId])
+  @@index([active])
+  @@index([type])
 }
 
 model Category {
@@ -78,6 +80,9 @@ model Category {
 
   @@index([organizationId])
   @@index([parentId])
+  @@index([active])
+  @@index([kind])
+  @@index([dreLine])
 }
 
 model Supplier {
@@ -96,6 +101,8 @@ model Supplier {
 
   @@index([organizationId])
   @@index([name])
+  @@index([active])
+  @@index([document])
 }
 
 model Transaction {
@@ -139,6 +146,13 @@ model Transaction {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
+  @@index([date, kind, status])
+  @@index([dueDate, status])
+  @@index([accountId, date])
+  @@index([categoryId, date])
+  @@index([supplierId])
+  @@index([isRecurring])
+  @@index([installmentGroupId])
   @@index([date])
   @@index([categoryId])
   @@index([accountId])
@@ -146,8 +160,6 @@ model Transaction {
   @@index([createdById])
   @@index([status])
   @@index([dueDate])
-  @@index([supplierId])
-  @@index([installmentGroupId])
 }
 
 model AuditLog {
