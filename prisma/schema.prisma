@@ -9,37 +9,41 @@ generator client {
 }
 
 model Organization {
-  id           String        @id @default("default-org")
-  name         String
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  users        User[]
-  accounts     Account[]
-  categories   Category[]
-  transactions Transaction[]
-  suppliers    Supplier[]
-  auditLogs    AuditLog[]
+  id             String          @id @default("default-org")
+  name           String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  users          User[]
+  accounts       Account[]
+  categories     Category[]
+  transactions   Transaction[]
+  suppliers      Supplier[]
+  auditLogs      AuditLog[]
+  machines       Machine[]
+  products       Product[]
+  stockMovements StockMovement[]
 }
 
 model User {
-  id                  String        @id @default(cuid())
-  email               String        @unique
-  passwordHash        String
-  name                String
-  role                String        @default("EDITOR") // ADMIN | EDITOR | VIEWER
-  active              Boolean       @default(true)
-  mustChangePassword  Boolean       @default(false)
-  lastLoginAt         DateTime?
-  failedLoginCount    Int           @default(0)
-  lockedUntil         DateTime?
-  sessionVersion      Int           @default(1)
-  organizationId      String        @default("default-org")
-  organization        Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
+  id                 String       @id @default(cuid())
+  email              String       @unique
+  passwordHash       String
+  name               String
+  role               String       @default("EDITOR") // ADMIN | EDITOR | VIEWER
+  active             Boolean      @default(true)
+  mustChangePassword Boolean      @default(false)
+  lastLoginAt        DateTime?
+  failedLoginCount   Int          @default(0)
+  lockedUntil        DateTime?
+  sessionVersion     Int          @default(1)
+  organizationId     String       @default("default-org")
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 
-  createdTransactions Transaction[] @relation("TransactionsCreated")
-  updatedTransactions Transaction[] @relation("TransactionsUpdated")
+  createdTransactions Transaction[]   @relation("TransactionsCreated")
+  updatedTransactions Transaction[]   @relation("TransactionsUpdated")
+  stockMovements      StockMovement[]
 
   @@index([organizationId])
   @@index([email])
@@ -48,7 +52,7 @@ model User {
 model Account {
   id                  String        @id @default(cuid())
   name                String
-  type                String        // BANK | CASH | CARD
+  type                String // BANK | CASH | CARD
   initialBalanceCents Int           @default(0)
   active              Boolean       @default(true)
   organizationId      String        @default("default-org")
@@ -68,8 +72,8 @@ model Category {
   parentId       String?
   parent         Category?     @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
   children       Category[]    @relation("CategoryHierarchy")
-  kind           String        // INCOME | EXPENSE
-  dreLine        String        // RECEITA_BRUTA | DEDUCOES | CMV | DESPESAS_OPERACIONAIS | RECEITAS_FINANCEIRAS | DESPESAS_FINANCEIRAS | IMPOSTOS_LUCRO | FORA_DRE
+  kind           String // INCOME | EXPENSE
+  dreLine        String // RECEITA_BRUTA | DEDUCOES | CMV | DESPESAS_OPERACIONAIS | RECEITAS_FINANCEIRAS | DESPESAS_FINANCEIRAS | IMPOSTOS_LUCRO | FORA_DRE
   active         Boolean       @default(true)
   sortOrder      Int           @default(0)
   organizationId String        @default("default-org")
@@ -77,6 +81,7 @@ model Category {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   transactions   Transaction[]
+  products       Product[]
 
   @@index([organizationId])
   @@index([parentId])
@@ -86,18 +91,20 @@ model Category {
 }
 
 model Supplier {
-  id             String        @id @default(cuid())
+  id             String          @id @default(cuid())
   name           String
   phone          String
   email          String?
   document       String?
   notes          String?
-  active         Boolean       @default(true)
-  organizationId String        @default("default-org")
-  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  active         Boolean         @default(true)
+  organizationId String          @default("default-org")
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
   transactions   Transaction[]
+  products       Product[]
+  stockMovements StockMovement[]
 
   @@index([organizationId])
   @@index([name])
@@ -106,45 +113,47 @@ model Supplier {
 }
 
 model Transaction {
-  id             String        @id @default(cuid())
+  id             String       @id @default(cuid())
   date           DateTime
-  kind           String        // INCOME | EXPENSE
-  amountCents    Int           // Sempre positivo; o sinal vem do kind
+  kind           String // INCOME | EXPENSE
+  amountCents    Int // Sempre positivo; o sinal vem do kind
   description    String
   accountId      String
-  account        Account       @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  account        Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
   categoryId     String
-  category       Category      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  category       Category     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   notes          String?
-  organizationId String        @default("default-org")
-  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String       @default("default-org")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   // Status e Datas Financeiras
-  status         String        @default("PAID") // PAID | PENDING
-  paidAt         DateTime?
-  dueDate        DateTime?
+  status  String    @default("PAID") // PAID | PENDING
+  paidAt  DateTime?
+  dueDate DateTime?
 
   // Fornecedor (opcional)
-  supplierId     String?
-  supplier       Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
 
   // Recorrência
-  isRecurring         Boolean  @default(false)
-  recurrenceFrequency String?  // MONTHLY | WEEKLY | YEARLY
+  isRecurring         Boolean @default(false)
+  recurrenceFrequency String? // MONTHLY | WEEKLY | YEARLY
 
   // Parcelamento
-  isInstallment       Boolean  @default(false)
-  installmentNumber   Int?
-  totalInstallments   Int?
-  installmentGroupId  String?
+  isInstallment      Boolean @default(false)
+  installmentNumber  Int?
+  totalInstallments  Int?
+  installmentGroupId String?
 
-  createdById    String?
-  createdBy      User?         @relation("TransactionsCreated", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedById    String?
-  updatedBy      User?         @relation("TransactionsUpdated", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdById String?
+  createdBy   User?   @relation("TransactionsCreated", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById String?
+  updatedBy   User?   @relation("TransactionsUpdated", fields: [updatedById], references: [id], onDelete: SetNull)
 
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stockMovement StockMovement?
 
   @@index([date, kind, status])
   @@index([dueDate, status])
@@ -164,7 +173,7 @@ model Transaction {
 
 model AuditLog {
   id             String       @id @default(cuid())
-  action         String       // LOGIN_SUCCESS | LOGIN_FAILED | LOGIN_LOCKED | USER_CREATED | USER_UPDATED | USER_ACTIVATED | USER_DEACTIVATED | PASSWORD_RESET | PASSWORD_CHANGED
+  action         String // LOGIN_SUCCESS | ...
   userId         String?
   userName       String?
   targetUserId   String?
@@ -179,4 +188,84 @@ model AuditLog {
   @@index([createdAt])
   @@index([action])
   @@index([userId])
+}
+
+model Machine {
+  id             String          @id @default(cuid())
+  name           String
+  location       String?
+  active         Boolean         @default(true)
+  organizationId String          @default("default-org")
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  stockMovements StockMovement[]
+
+  @@index([organizationId])
+  @@index([active])
+}
+
+model Product {
+  id             String          @id @default(cuid())
+  name           String
+  description    String?
+  sku            String          @unique
+  barcode        String?
+  categoryId     String?
+  category       Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  supplierId     String?
+  supplier       Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  salePrice      Float           @default(0)
+  costPrice      Float           @default(0)
+  unit           String          @default("UN")
+  unitPerPack    Int             @default(1)
+  minStock       Int             @default(0)
+  currentStock   Int             @default(0)
+  active         Boolean         @default(true)
+  organizationId String          @default("default-org")
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  stockMovements StockMovement[]
+
+  @@index([organizationId])
+  @@index([active])
+  @@index([barcode])
+  @@index([categoryId])
+  @@index([supplierId])
+}
+
+model StockMovement {
+  id             String       @id @default(cuid())
+  productId      String
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  type           String // IN | OUT | ADJUST
+  reason         String // PURCHASE | MACHINE_REFILL | LOSS_EXPIRED | LOSS_DAMAGE | INVENTORY_ADJUSTMENT
+  quantity       Int // sempre em unidades base positivas
+  previousStock  Int
+  newStock       Int
+  unitCost       Float? // Preço de custo unitário pago na entrada
+  totalCost      Float? // Valor total da movimentação (quantity * unitCost)
+  expirationDate DateTime? // Data de validade do lote
+  machineId      String?
+  machine        Machine?     @relation(fields: [machineId], references: [id], onDelete: SetNull)
+  supplierId     String?
+  supplier       Supplier?    @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  transactionId  String?      @unique
+  transaction    Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  notes          String?
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organizationId String       @default("default-org")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId])
+  @@index([productId])
+  @@index([type])
+  @@index([reason])
+  @@index([machineId])
+  @@index([supplierId])
+  @@index([expirationDate])
+  @@index([createdAt])
 }

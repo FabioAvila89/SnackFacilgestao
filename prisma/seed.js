@@ -77,6 +77,24 @@ async function main() {
     console.log("Conta principal criada com saldo inicial R$ 0,00.");
   }
 
+  // 3.1 Máquina 01 Padrão
+  const defaultMachine = await prisma.machine.upsert({
+    where: { id: "default-machine-01" },
+    update: {
+      name: "Máquina 01 - Padrão",
+      location: "Ponto Principal",
+      active: true,
+    },
+    create: {
+      id: "default-machine-01",
+      name: "Máquina 01 - Padrão",
+      location: "Ponto Principal",
+      active: true,
+      organizationId: org.id,
+    },
+  });
+  console.log(`Máquina padrão garantida: ${defaultMachine.name}`);
+
   // 4. Categorias Iniciais (Hierárquicas)
   const categoriesDefinition = [
     // ENTRADAS
