@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
+import { useAuth } from "@/contexts/AuthContext";
 import { formatCentsToBRL, formatDateToBR } from "@/lib/formatters";
 import {
   Search,
@@ -78,7 +79,7 @@ export default function TransactionsPage() {
   // Dados auxiliares para selects
   const [accounts, setAccounts] = useState<any[]>([]);
   const [categoriesTree, setCategoriesTree] = useState<any[]>([]);
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const { user: currentUser } = useAuth();
 
   // Modais
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -89,21 +90,18 @@ export default function TransactionsPage() {
   const [isStoppingRecurrence, setIsStoppingRecurrence] = useState(false);
   const [markingPaidId, setMarkingPaidId] = useState<string | null>(null);
 
-  // Carrega opções de contas, categorias e usuário logado
+  // Carrega opções de contas e categorias
   useEffect(() => {
     async function loadFilters() {
       try {
-        const [accRes, catRes, meRes] = await Promise.all([
+        const [accRes, catRes] = await Promise.all([
           fetch("/api/accounts"),
           fetch("/api/categories?includeInactive=true"),
-          fetch("/api/auth/me"),
         ]);
         const accData = await accRes.json();
         const catData = await catRes.json();
-        const meData = await meRes.json();
         setAccounts(accData.accounts || []);
         setCategoriesTree(catData.tree || []);
-        setCurrentUser(meData.user || null);
       } catch (err) {
         console.error(err);
       }

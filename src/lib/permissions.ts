@@ -21,7 +21,13 @@ export type PermissionAction =
   | "transaction:delete"
   | "import:execute"
   | "export:execute"
-  | "reports:view";
+  | "reports:view"
+  | "product:read"
+  | "product:write"
+  | "stock:read"
+  | "stock:write"
+  | "machine:read"
+  | "machine:write";
 
 /**
  * Matriz centralizada de permissões por perfil (Role-Based Access Control)
@@ -49,6 +55,12 @@ export const ROLE_PERMISSIONS: Record<Role, readonly PermissionAction[]> = {
     "import:execute",
     "export:execute",
     "reports:view",
+    "product:read",
+    "product:write",
+    "stock:read",
+    "stock:write",
+    "machine:read",
+    "machine:write",
   ],
   EDITOR: [
     "category:read",
@@ -62,6 +74,12 @@ export const ROLE_PERMISSIONS: Record<Role, readonly PermissionAction[]> = {
     "import:execute",
     "export:execute",
     "reports:view",
+    "product:read",
+    "product:write",
+    "stock:read",
+    "stock:write",
+    "machine:read",
+    "machine:write",
   ],
   VIEWER: [
     "category:read",
@@ -70,6 +88,9 @@ export const ROLE_PERMISSIONS: Record<Role, readonly PermissionAction[]> = {
     "transaction:read",
     "export:execute",
     "reports:view",
+    "product:read",
+    "stock:read",
+    "machine:read",
   ],
 } as const;
 
@@ -99,21 +120,24 @@ export function can(
   const permissions = ROLE_PERMISSIONS[role];
   if (!permissions) return false;
 
-  return permissions.includes(action);
+  return (permissions as readonly string[]).includes(action);
 }
 
 /**
- * Auxiliar para validação de política de senha forte
- * Regra: Mínimo de 10 caracteres
+ * Retorna lista amigável de permissões do usuário
+ */
+export function getPermissionsForRole(role: Role): readonly PermissionAction[] {
+  return ROLE_PERMISSIONS[role] || [];
+}
+
+/**
+ * Validação de política de segurança de senhas
  */
 export function validatePasswordPolicy(password: string): { valid: boolean; message?: string } {
-  if (!password || typeof password !== "string") {
-    return { valid: false, message: "A senha é obrigatória." };
-  }
-  if (password.length < 10) {
+  if (!password || password.length < 10) {
     return {
       valid: false,
-      message: "A senha deve conter no mínimo 10 caracteres para garantir a segurança da conta.",
+      message: "A senha deve conter no mínimo 10 caracteres.",
     };
   }
   return { valid: true };

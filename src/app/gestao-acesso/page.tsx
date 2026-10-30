@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
+import { useAuth } from "@/contexts/AuthContext";
 import { formatDateToBR } from "@/lib/formatters";
 import {
   Users,
@@ -59,7 +60,7 @@ export default function GestaoAcessoPage() {
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const { user: currentUser } = useAuth();
 
   // Modais de Usuário
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -113,7 +114,7 @@ export default function GestaoAcessoPage() {
   const [auditStartDate, setAuditStartDate] = useState("");
   const [auditEndDate, setAuditEndDate] = useState("");
 
-  // Carrega Usuários e Sessão Atual
+  // Carrega Usuários
   const fetchUsers = async () => {
     try {
       setLoadingUsers(true);
@@ -121,18 +122,11 @@ export default function GestaoAcessoPage() {
       if (search) params.set("search", search);
       if (statusFilter !== "ALL") params.set("status", statusFilter);
 
-      const [resUsers, resMe] = await Promise.all([
-        fetch(`/api/users?${params.toString()}`),
-        fetch("/api/auth/me"),
-      ]);
+      const resUsers = await fetch(`/api/users?${params.toString()}`);
 
       if (resUsers.ok) {
         const data = await resUsers.json();
         setUsers(data.users || []);
-      }
-      if (resMe.ok) {
-        const dataMe = await resMe.json();
-        setCurrentUser(dataMe.user);
       }
     } catch (err) {
       console.error("Erro ao carregar usuários:", err);

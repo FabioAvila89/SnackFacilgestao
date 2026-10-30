@@ -8,6 +8,7 @@ import {
   setSessionCookie,
   createAuditLog,
   getClientIp,
+  invalidateUserSessionCache,
 } from "@/lib/auth";
 import { validatePasswordPolicy } from "@/lib/permissions";
 import { z } from "zod";
@@ -25,22 +26,19 @@ export async function GET() {
     return NextResponse.json({ user: null }, { status: 401 });
   }
 
-  // Busca dados completos atualizados (sem hash de senha)
-  const dbUser = await prisma.user.findUnique({
-    where: { id: user.userId },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      active: true,
-      mustChangePassword: true,
-      lastLoginAt: true,
-      createdAt: true,
+  // Retorna diretamente dados autenticados já validados pelo getCurrentUser (com cache)
+  return NextResponse.json({
+    user: {
+      id: user.userId,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      active: user.active,
+      mustChangePassword: user.mustChangePassword,
+      lastLoginAt: user.lastLoginAt,
+      createdAt: user.createdAt,
     },
   });
-
-  return NextResponse.json({ user: dbUser });
 }
 
 export async function PUT(req: Request) {
@@ -161,6 +159,9 @@ export async function PUT(req: Request) {
       ipAddress: ip,
       organizationId: currentUser.organizationId,
     });
+
+    // Invalida cache de sessão em memória
+    invalidateUserSessionCache(currentUser.userId);
 
     // Se a versão da sessão mudou (troca de senha) ou o nome mudou, renova o cookie do usuário corrente
     const newToken = await createSessionToken({

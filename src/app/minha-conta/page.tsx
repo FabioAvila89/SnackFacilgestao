@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
+import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import {
   UserCircle,
@@ -29,6 +30,7 @@ interface UserProfile {
 
 export default function MinhaContaPage() {
   const router = useRouter();
+  const { user: authUser, refreshUser, logout: authLogout } = useAuth();
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -47,23 +49,12 @@ export default function MinhaContaPage() {
   const [passwordError, setPasswordError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function loadMe() {
-      try {
-        setLoading(true);
-        const res = await fetch("/api/auth/me");
-        if (res.ok) {
-          const data = await res.json();
-          setUser(data.user);
-          setName(data.user?.name || "");
-        }
-      } catch (err) {
-        console.error("Erro ao carregar perfil:", err);
-      } finally {
-        setLoading(false);
-      }
+    if (authUser) {
+      setUser(authUser as any);
+      setName(authUser.name || "");
+      setLoading(false);
     }
-    loadMe();
-  }, []);
+  }, [authUser]);
 
   const handleUpdateName = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,6 +80,7 @@ export default function MinhaContaPage() {
       }
 
       setUser((prev) => (prev ? { ...prev, name: data.user.name } : null));
+      await refreshUser();
       setNameSuccess(true);
       setTimeout(() => setNameSuccess(false), 3000);
     } catch (err: any) {
@@ -138,6 +130,7 @@ export default function MinhaContaPage() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
+      await refreshUser();
       setPasswordSuccess(true);
       setTimeout(() => setPasswordSuccess(false), 4000);
     } catch (err: any) {
@@ -148,13 +141,7 @@ export default function MinhaContaPage() {
   };
 
   const handleLogout = async () => {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-      router.push("/login");
-      router.refresh();
-    } catch (e) {
-      console.error(e);
-    }
+    await authLogout();
   };
 
   const getRoleLabel = (role?: string) => {

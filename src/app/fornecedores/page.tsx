@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
+import { useAuth } from "@/contexts/AuthContext";
 import { formatPhoneBR, formatCpfCnpj } from "@/lib/formatters";
 import {
   Truck,
@@ -50,7 +51,7 @@ export default function SuppliersPage() {
   const [submitting, setSubmitting] = useState(false);
 
   // Usuário para permissões
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const { user: currentUser } = useAuth();
 
   const fetchSuppliers = async () => {
     try {
@@ -69,21 +70,6 @@ export default function SuppliersPage() {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    async function loadUser() {
-      try {
-        const res = await fetch("/api/auth/me");
-        if (res.ok) {
-          const data = await res.json();
-          setCurrentUser(data.user);
-        }
-      } catch (err) {
-        console.error(err);
-      }
-    }
-    loadUser();
-  }, []);
 
   useEffect(() => {
     fetchSuppliers();

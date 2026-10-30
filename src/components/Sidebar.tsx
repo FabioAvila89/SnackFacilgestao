@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   LayoutDashboard,
   Receipt,
@@ -17,6 +17,8 @@ import {
   PlusCircle,
   Users,
   UserCircle,
+  Package,
+  Boxes,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -33,6 +35,8 @@ interface UserInfo {
 const baseNavItems = [
   { href: "/", label: "Início (Dashboard)", icon: LayoutDashboard },
   { href: "/lancamentos", label: "Lançamentos", icon: Receipt },
+  { href: "/produtos", label: "Produtos", icon: Package },
+  { href: "/estoque", label: "Estoque", icon: Boxes },
   { href: "/relatorios/fluxo", label: "Entradas × Saídas", icon: ArrowUpDown },
   { href: "/relatorios/categorias", label: "Gastos por Categoria", icon: PieChart },
   { href: "/relatorios/dre", label: "DRE", icon: FileSpreadsheet },
@@ -44,33 +48,7 @@ const baseNavItems = [
 
 export function Sidebar({ onOpenNewTransaction }: SidebarProps) {
   const pathname = usePathname();
-  const router = useRouter();
-  const [currentUser, setCurrentUser] = useState<UserInfo | null>(null);
-
-  useEffect(() => {
-    async function loadUser() {
-      try {
-        const res = await fetch("/api/auth/me");
-        if (res.ok) {
-          const data = await res.json();
-          setCurrentUser(data.user);
-        }
-      } catch (err) {
-        console.error("Erro ao carregar dados do usuário na sidebar:", err);
-      }
-    }
-    loadUser();
-  }, []);
-
-  const handleLogout = async () => {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-      router.push("/login");
-      router.refresh();
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const { user: currentUser, logout: handleLogout } = useAuth();
 
   const navItems = [...baseNavItems];
 
@@ -112,7 +90,7 @@ export function Sidebar({ onOpenNewTransaction }: SidebarProps) {
         </div>
         <div>
           <h1 className="font-bold text-white leading-tight">Snack Fácil</h1>
-          <p className="text-xs text-orange-400 font-medium">Controle Financeiro</p>
+          <p className="text-xs text-orange-400 font-medium">Controle Financeiro & Estoque</p>
         </div>
       </div>
 

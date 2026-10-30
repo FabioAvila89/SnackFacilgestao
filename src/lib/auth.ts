@@ -23,6 +23,24 @@ export interface SessionPayload {
 
 export interface AuthenticatedUser extends SessionPayload {
   active: boolean;
+  createdAt?: Date;
+  lastLoginAt?: Date | null;
+}
+
+// Cache em memória de sessão de usuário para evitar queries redundantes em requisições paralelas
+interface CachedUserSession {
+  user: AuthenticatedUser;
+  expiresAt: number;
+}
+
+const sessionCache = new Map<string, CachedUserSession>();
+
+export function invalidateUserSessionCache(userId?: string) {
+  if (userId) {
+    sessionCache.delete(userId);
+  } else {
+    sessionCache.clear();
+  }
 }
 
 export async function hashPassword(password: string): Promise<string> {
@@ -94,6 +112,17 @@ export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
     const payload = await verifySessionToken(token);
     if (!payload) return null;
 
+    const now = Date.now();
+    const cached = sessionCache.get(payload.userId);
+    if (
+      cached &&
+      cached.expiresAt > now &&
+      cached.user.sessionVersion === payload.sessionVersion &&
+      cached.user.active
+    ) {
+      return cached.user;
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: payload.userId },
       select: {
@@ -105,6 +134,8 @@ export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
         mustChangePassword: true,
         sessionVersion: true,
         organizationId: true,
+        createdAt: true,
+        lastLoginAt: true,
       },
     });
 
@@ -114,7 +145,7 @@ export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
     // Invalidação de sessão quando alterado perfil, redefinida senha ou desativado
     if (user.sessionVersion !== payload.sessionVersion) return null;
 
-    return {
+    const authUser: AuthenticatedUser = {
       userId: user.id,
       email: user.email,
       name: user.name,
@@ -123,7 +154,17 @@ export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
       mustChangePassword: user.mustChangePassword,
       sessionVersion: user.sessionVersion,
       organizationId: user.organizationId,
+      createdAt: user.createdAt,
+      lastLoginAt: user.lastLoginAt,
     };
+
+    // Cache por 30 segundos para chamadas concorrentes
+    sessionCache.set(payload.userId, {
+      user: authUser,
+      expiresAt: now + 30_000,
+    });
+
+    return authUser;
   } catch (e) {
     return null;
   }
@@ -167,7 +208,15 @@ export interface AuditLogInput {
     | "USER_DEACTIVATED"
     | "USER_DELETED"
     | "PASSWORD_RESET"
-    | "PASSWORD_CHANGED";
+    | "PASSWORD_CHANGED"
+    | "PRODUCT_CREATED"
+    | "PRODUCT_UPDATED"
+    | "PRODUCT_DELETED"
+    | "STOCK_MOVEMENT_CREATED"
+    | "MACHINE_CREATED"
+    | "MACHINE_UPDATED"
+    | "MACHINE_DELETED"
+    | (string & {});
   userId?: string | null;
   userName?: string | null;
   targetUserId?: string | null;
