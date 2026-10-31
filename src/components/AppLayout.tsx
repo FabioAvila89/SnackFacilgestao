@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sidebar } from "./Sidebar";
 import { MobileHeader } from "./MobileHeader";
 import { TransactionModal } from "./TransactionModal";
@@ -11,11 +11,14 @@ interface AppLayoutProps {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const handleOpen = () => setIsModalOpen(true);
+    window.addEventListener("snack:open-transaction-modal", handleOpen);
+    return () => window.removeEventListener("snack:open-transaction-modal", handleOpen);
+  }, []);
 
   const handleTransactionSuccess = () => {
-    // Força recarregamento suave dos dados nos componentes filhos
-    setRefreshKey((k) => k + 1);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("snack:transaction-updated"));
     }
@@ -36,12 +39,14 @@ export function AppLayout({ children }: AppLayoutProps) {
         </main>
       </div>
 
-      {/* Modal global de novo lançamento */}
-      <TransactionModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSuccess={handleTransactionSuccess}
-      />
+      {/* Modal global de novo lançamento (montado apenas quando aberto) */}
+      {isModalOpen && (
+        <TransactionModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          onSuccess={handleTransactionSuccess}
+        />
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { AppLayout } from "@/components/AppLayout";
+import { useState } from "react";
+import { useCachedFetch } from "@/lib/useCachedFetch";
 import { formatCentsToBRL, formatPercent, formatDateToBR } from "@/lib/formatters";
 import {
   PieChart as PieChartIcon,
@@ -43,37 +43,19 @@ export default function CategoryExpensesPage() {
   const [period, setPeriod] = useState("month");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<any>(null);
-
-  // Controle de linhas expandidas para drill-down
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+    const queryParams = new URLSearchParams();
+  queryParams.set("kind", kind);
+  queryParams.set("period", period);
+  if (period === "custom" && startDate && endDate) {
+    queryParams.set("startDate", startDate);
+    queryParams.set("endDate", endDate);
+  }
+  const apiUrl = (period === "custom" && (!startDate || !endDate))
+    ? null
+    : `/api/reports/categories?${queryParams.toString()}`;
 
-  const fetchCategoryData = async () => {
-    try {
-      setLoading(true);
-      const params = new URLSearchParams();
-      params.set("kind", kind);
-      params.set("period", period);
-      if (period === "custom" && startDate && endDate) {
-        params.set("startDate", startDate);
-        params.set("endDate", endDate);
-      }
-
-      const res = await fetch(`/api/reports/categories?${params.toString()}`);
-      if (!res.ok) throw new Error("Erro ao carregar despesas por categoria");
-      const json = await res.json();
-      setData(json);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchCategoryData();
-  }, [kind, period]);
+  const { data, loading } = useCachedFetch<any>(apiUrl);
 
   const toggleCategoryExpand = (catId: string) => {
     setExpandedCategories((prev) => ({
@@ -107,7 +89,7 @@ export default function CategoryExpensesPage() {
   };
 
   return (
-    <AppLayout>
+    <>
       <div className="space-y-6">
         {/* Top Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
@@ -436,6 +418,6 @@ export default function CategoryExpensesPage() {
           </div>
         </div>
       </div>
-    </AppLayout>
+    </>
   );
 }

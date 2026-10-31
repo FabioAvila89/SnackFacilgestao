@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { calculateMonthlyFlow, calculateAccountBalance } from "@/lib/finance-engine";
+import { calculateMonthlyFlow } from "@/lib/finance-engine";
 
 export async function GET(req: Request) {
   const user = await getCurrentUser();

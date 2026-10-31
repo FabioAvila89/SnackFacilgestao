@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { AppLayout } from "@/components/AppLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatPhoneBR, formatCpfCnpj } from "@/lib/formatters";
 import {
@@ -177,7 +176,7 @@ export default function SuppliersPage() {
   };
 
   return (
-    <AppLayout>
+    <>
       <div className="space-y-6">
         {/* Cabeçalho */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -492,6 +491,6 @@ export default function SuppliersPage() {
           </div>
         </div>
       )}
-    </AppLayout>
+    </>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { AppLayout } from "@/components/AppLayout";
+import { useState } from "react";
+import { useCachedFetch } from "@/lib/useCachedFetch";
 import { formatCentsToBRL, formatPercent } from "@/lib/formatters";
 import {
   FileSpreadsheet,
@@ -19,36 +19,18 @@ export default function DreReportPage() {
   const [period, setPeriod] = useState("month"); // month, quarter, year, custom
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<any>(null);
-
-  // Linhas do DRE expandidas para ver categorias
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+    const queryParams = new URLSearchParams();
+  queryParams.set("period", period);
+  if (period === "custom" && startDate && endDate) {
+    queryParams.set("startDate", startDate);
+    queryParams.set("endDate", endDate);
+  }
+  const apiUrl = (period === "custom" && (!startDate || !endDate))
+    ? null
+    : `/api/reports/dre?${queryParams.toString()}`;
 
-  const fetchDreData = async () => {
-    try {
-      setLoading(true);
-      const params = new URLSearchParams();
-      params.set("period", period);
-      if (period === "custom" && startDate && endDate) {
-        params.set("startDate", startDate);
-        params.set("endDate", endDate);
-      }
-
-      const res = await fetch(`/api/reports/dre?${params.toString()}`);
-      if (!res.ok) throw new Error("Erro ao carregar DRE");
-      const json = await res.json();
-      setData(json);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchDreData();
-  }, [period]);
+  const { data, loading } = useCachedFetch<any>(apiUrl);
 
   const toggleRow = (key: string) => {
     setExpandedRows((prev) => ({
@@ -70,7 +52,7 @@ export default function DreReportPage() {
   const dre = data?.dre;
 
   return (
-    <AppLayout>
+    <>
       <div className="space-y-6">
         {/* Cabeçalho */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
@@ -355,6 +337,6 @@ export default function DreReportPage() {
           )}
         </div>
       </div>
-    </AppLayout>
+    </>
   );
 }

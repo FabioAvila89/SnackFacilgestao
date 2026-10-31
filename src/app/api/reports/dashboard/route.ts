@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { calculateAccountBalance, calculateExpensesByCategory } from "@/lib/finance-engine";
+import { calculateExpensesByCategory } from "@/lib/finance-engine";
 
 export async function GET(req: Request) {
   const user = await getCurrentUser();
@@ -73,22 +73,19 @@ export async function GET(req: Request) {
       },
     }),
 
-    // 4. Últimos 12 meses para gráfico de barras com select estrito
-    prisma.transaction.findMany({
-      where: {
-        organizationId: user.organizationId,
-        status: "PAID",
-        date: {
-          gte: twelveMonthsAgo,
-          lte: monthEnd,
-        },
-      },
-      select: {
-        date: true,
-        kind: true,
-        amountCents: true,
-      },
-    }),
+    // 4. Agregação direta no PostgreSQL por mês e kind para o gráfico de 12 meses
+    prisma.$queryRaw<{ month: string; kind: string; total: bigint | number | string }[]>`
+      SELECT
+        TO_CHAR(date AT TIME ZONE 'UTC', 'YYYY-MM') AS month,
+        kind,
+        SUM("amountCents") AS total
+      FROM "Transaction"
+      WHERE "organizationId" = ${user.organizationId}
+        AND status = 'PAID'
+        AND date >= ${twelveMonthsAgo}
+        AND date <= ${monthEnd}
+      GROUP BY TO_CHAR(date AT TIME ZONE 'UTC', 'YYYY-MM'), kind
+    `,
   ]);
 
   // Calcula Saldo Total Atual em O(1) a partir das somas agregadas
@@ -157,12 +154,13 @@ export async function GET(req: Request) {
     last12MonthsMap.set(key, { income: 0, expense: 0, label });
   }
 
-  for (const t of recentTransactions) {
-    const key = `${t.date.getUTCFullYear()}-${String(t.date.getUTCMonth() + 1).padStart(2, "0")}`;
+  for (const row of recentTransactions) {
+    const key = row.month;
     if (last12MonthsMap.has(key)) {
       const item = last12MonthsMap.get(key)!;
-      if (t.kind === "INCOME") item.income += t.amountCents;
-      if (t.kind === "EXPENSE") item.expense += t.amountCents;
+      const amount = Number(row.total || 0);
+      if (row.kind === "INCOME") item.income += amount;
+      if (row.kind === "EXPENSE") item.expense += amount;
     }
   }
 

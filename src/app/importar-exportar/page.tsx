@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { AppLayout } from "@/components/AppLayout";
 import { formatCentsToBRL } from "@/lib/formatters";
 import {
   UploadCloud,
@@ -106,7 +105,7 @@ export default function ImportExportPage() {
   };
 
   return (
-    <AppLayout>
+    <>
       <div className="space-y-8">
         {/* Cabeçalho */}
         <div className="pb-2 border-b border-slate-200">
@@ -393,6 +392,6 @@ export default function ImportExportPage() {
           )}
         </div>
       </div>
-    </AppLayout>
+    </>
   );
 }

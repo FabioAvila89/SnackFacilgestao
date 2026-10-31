@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { AppLayout } from "@/components/AppLayout";
+import { getCachedData, setCachedData, fetchWithDedupe, invalidateCache } from "@/lib/useCachedFetch";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatCentsToBRL } from "@/lib/formatters";
 import { UNIT_MEASURES, getUnitLabel, getUnitSymbol } from "@/lib/units";
@@ -141,9 +141,8 @@ export default function ProductsPage() {
   }, []);
 
   // Busca produtos
-  const fetchProducts = async () => {
+  const fetchProducts = async (silent = false) => {
     try {
-      setLoading(true);
       const params = new URLSearchParams();
       if (search) params.set("search", search);
       if (selectedCategoryId) params.set("categoryId", selectedCategoryId);
@@ -151,9 +150,21 @@ export default function ProductsPage() {
       if (statusFilter !== "ALL") params.set("status", statusFilter);
       if (onlyLowStock) params.set("lowStock", "true");
 
-      const res = await fetch(`/api/products?${params.toString()}`);
-      if (!res.ok) throw new Error("Erro ao buscar catálogo");
-      const data = await res.json();
+      const cacheKey = `/api/products?${params.toString()}`;
+      const cached = getCachedData(cacheKey);
+
+      if (cached) {
+        setProducts(cached.products || []);
+        if (cached.summary) {
+          setSummary(cached.summary);
+        }
+        setLoading(false);
+      } else if (!silent) {
+        setLoading(true);
+      }
+
+      const data = await fetchWithDedupe(cacheKey);
+      setCachedData(cacheKey, data);
       setProducts(data.products || []);
       if (data.summary) {
         setSummary(data.summary);
@@ -324,7 +335,7 @@ export default function ProductsPage() {
   const canEdit = currentUser?.role !== "VIEWER";
 
   return (
-    <AppLayout>
+    <>
       <div className="space-y-6 max-w-7xl mx-auto pb-12">
         {/* Top Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -940,7 +951,7 @@ export default function ProductsPage() {
           </div>
         )}
       </div>
-    </AppLayout>
+    </>
   );
 }
 

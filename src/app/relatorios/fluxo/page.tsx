@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { AppLayout } from "@/components/AppLayout";
+import { useState } from "react";
+import { useCachedFetch } from "@/lib/useCachedFetch";
 import { formatCentsToBRL } from "@/lib/formatters";
 import {
   Calendar,
@@ -28,37 +28,24 @@ export default function CashFlowReportPage() {
   const [period, setPeriod] = useState("year"); // month, quarter, year, custom
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<any>(null);
+    const [customSubmitted, setCustomSubmitted] = useState(0);
 
-  const fetchFlowData = async () => {
-    try {
-      setLoading(true);
-      const params = new URLSearchParams();
-      params.set("period", period);
-      if (period === "custom" && startDate && endDate) {
-        params.set("startDate", startDate);
-        params.set("endDate", endDate);
-      }
+  const queryParams = new URLSearchParams();
+  queryParams.set("period", period);
+  if (period === "custom" && startDate && endDate) {
+    queryParams.set("startDate", startDate);
+    queryParams.set("endDate", endDate);
+  }
+  const apiUrl = (period === "custom" && (!startDate || !endDate))
+    ? null
+    : `/api/reports/flow?${queryParams.toString()}`;
 
-      const res = await fetch(`/api/reports/flow?${params.toString()}`);
-      if (!res.ok) throw new Error("Erro ao carregar fluxo de caixa");
-      const json = await res.json();
-      setData(json);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchFlowData();
-  }, [period]);
+  const { data, loading, refetch } = useCachedFetch<any>(apiUrl);
 
   const handleCustomFilterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchFlowData();
+    setCustomSubmitted((c) => c + 1);
+    refetch(true);
   };
 
   const chartData = (data?.monthlyFlow || []).map((m: any) => ({
@@ -91,7 +78,7 @@ export default function CashFlowReportPage() {
   };
 
   return (
-    <AppLayout>
+    <>
       <div className="space-y-6">
         {/* Cabeçalho */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
@@ -378,6 +365,6 @@ export default function CashFlowReportPage() {
           </div>
         </div>
       </div>
-    </AppLayout>
+    </>
   );
 }
