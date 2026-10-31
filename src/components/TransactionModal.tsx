@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { X, Check, AlertCircle, Calendar, Repeat, Layers, CheckCircle2 } from "lucide-react";
 import { formatDateToInput, parseBRLToCents, formatCentsToBRL } from "@/lib/formatters";
+import { desdobrarParcelas, determinarStatusPorVencimento } from "@/lib/installments";
 
 interface InstallmentRow {
   installmentNumber: number;
@@ -159,37 +160,41 @@ export function TransactionModal({
     loadData();
   }, [isOpen, transactionToEdit]);
 
-  // Recalcula parcelas dinâmicas quando valor total ou número de parcelas mudar
+  // Recalcula parcelas dinâmicas quando valor total, número de parcelas ou vencimento mudar
   useEffect(() => {
     if (!isInstallment || isEditing) return;
 
     const totalCents = parseBRLToCents(amountStr);
     const n = Math.max(2, numInstallments || 2);
-    const baseCents = Math.floor(totalCents / n);
-    const remainder = totalCents - baseCents * n;
 
-    const baseDateObj = date ? new Date(date + "T12:00:00Z") : new Date();
+    // Regra: usar a Data de Vencimento informada como âncora absoluta; se estiver vazia, usar a Data de Lançamento como fallback
+    const dataAncora = dueDate ? dueDate : date;
+    if (!dataAncora) return;
 
-    const rows: InstallmentRow[] = [];
-    for (let i = 0; i < n; i++) {
-      const rowCents = i === 0 ? baseCents + remainder : baseCents;
-      const rowDate = new Date(baseDateObj);
-      rowDate.setUTCMonth(rowDate.getUTCMonth() + i);
+    try {
+      const parcelasCalculadas = desdobrarParcelas(totalCents / 100, n, dataAncora);
 
-      // Parcela 1 pode iniciar com status geral; parcelas futuras default PENDING
-      const rowStatus: "PAID" | "PENDING" = i === 0 ? status : "PENDING";
-
-      rows.push({
-        installmentNumber: i + 1,
-        totalInstallments: n,
-        dueDate: formatDateToInput(rowDate),
-        amountStr: (rowCents / 100).toFixed(2).replace(".", ","),
-        status: rowStatus,
+      const rows: InstallmentRow[] = parcelasCalculadas.map((p) => {
+        // Regra de status: data futura = PENDING; data atual ou retroativa = PAID
+        return {
+          installmentNumber: p.numeroParcela,
+          totalInstallments: n,
+          dueDate: p.dataVencimentoStr,
+          amountStr: (p.valorCents / 100).toFixed(2).replace(".", ","),
+          status: p.statusSugerido,
+        };
       });
-    }
 
-    setInstallmentRows(rows);
-  }, [isInstallment, numInstallments, amountStr, date, isEditing]);
+      setInstallmentRows(rows);
+
+      // Sincroniza o status geral do topo com a primeira parcela
+      if (rows.length > 0 && rows[0].status !== status) {
+        setStatus(rows[0].status);
+      }
+    } catch (err) {
+      console.error("Erro ao calcular desdobramento de parcelas:", err);
+    }
+  }, [isInstallment, numInstallments, amountStr, dueDate, date, isEditing]);
 
   if (!isOpen) return null;
 
@@ -455,7 +460,13 @@ export function TransactionModal({
                 type="date"
                 required
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setDate(val);
+                  if (!isEditing && !dueDate && val) {
+                    setStatus(determinarStatusPorVencimento(val));
+                  }
+                }}
                 className="block w-full px-3 py-2.5 text-sm font-medium border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white"
               />
             </div>
@@ -469,7 +480,16 @@ export function TransactionModal({
               <input
                 type="date"
                 value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setDueDate(val);
+                  if (!isEditing) {
+                    const dataRef = val || date;
+                    if (dataRef) {
+                      setStatus(determinarStatusPorVencimento(dataRef));
+                    }
+                  }
+                }}
                 className="block w-full px-3 py-2.5 text-sm font-medium border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white"
               />
             </div>
