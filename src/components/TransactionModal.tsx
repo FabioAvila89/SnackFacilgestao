@@ -215,6 +215,13 @@ export function TransactionModal({
   };
 
   const handleInstallmentRowChange = (index: number, field: keyof InstallmentRow, value: any) => {
+    // Se alterar o vencimento da Parcela 1/N diretamente na grade, sincroniza com o campo mestre do topo
+    // e recalcula automaticamente todas as parcelas seguintes com a nova âncora
+    if (index === 0 && field === "dueDate" && value) {
+      setDueDate(value);
+      return;
+    }
+
     setInstallmentRows((prev) => {
       const copy = [...prev];
       copy[index] = { ...copy[index], [field]: value };
@@ -653,7 +660,13 @@ export function TransactionModal({
                     onChange={(e) => {
                       const val = e.target.checked;
                       setIsInstallment(val);
-                      if (val) setIsRecurring(false);
+                      if (val) {
+                        setIsRecurring(false);
+                        // Se a data de vencimento estiver em branco ao ativar, inicializa com a data do lançamento
+                        if (!dueDate && date) {
+                          setDueDate(date);
+                        }
+                      }
                     }}
                     className="w-4 h-4 text-orange-600 rounded border-slate-300 focus:ring-orange-500"
                   />
