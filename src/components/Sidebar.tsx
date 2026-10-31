@@ -48,7 +48,7 @@ const baseNavItems = [
 
 export function Sidebar({ onOpenNewTransaction }: SidebarProps) {
   const pathname = usePathname();
-  const { user: currentUser, logout: handleLogout } = useAuth();
+  const { user: currentUser, loading, logout: handleLogout } = useAuth();
 
   const navItems = [...baseNavItems];
 
@@ -143,11 +143,11 @@ export function Sidebar({ onOpenNewTransaction }: SidebarProps) {
               {getRoleBadge(currentUser?.role)}
             </div>
             <Link
-              href="/minha-conta"
+              href={currentUser ? "/minha-conta" : "/login"}
               className="font-semibold text-slate-200 truncate block hover:text-orange-400 transition-colors"
               title="Acessar Minha Conta"
             >
-              {currentUser?.name || "Carregando..."}
+              {loading ? "Carregando..." : (currentUser?.name || "Entrar")}
             </Link>
           </div>
           <button
