@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { AppLayout } from "@/components/AppLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import {
@@ -158,7 +157,7 @@ export default function MinhaContaPage() {
   };
 
   return (
-    <AppLayout>
+    <>
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Cabeçalho */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
@@ -390,6 +389,6 @@ export default function MinhaContaPage() {
           </div>
         </div>
       </div>
-    </AppLayout>
+    </>
   );
 }

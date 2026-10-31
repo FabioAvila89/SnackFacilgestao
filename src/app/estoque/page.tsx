@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { AppLayout } from "@/components/AppLayout";
+import { getCachedData, setCachedData, fetchWithDedupe, invalidateCache } from "@/lib/useCachedFetch";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatCentsToBRL, formatDateToBR, formatDateToInput } from "@/lib/formatters";
 import { getUnitSymbol } from "@/lib/units";
@@ -455,7 +455,7 @@ export default function StockControlPage() {
   const canOperate = currentUser?.role !== "VIEWER";
 
   return (
-    <AppLayout>
+    <>
       <div className="space-y-6 max-w-7xl mx-auto pb-12">
         {/* Header Superior */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -1457,7 +1457,7 @@ export default function StockControlPage() {
           </div>
         )}
       </div>
-    </AppLayout>
+    </>
   );
 }
 

@@ -5,6 +5,28 @@ import { X, Check, AlertCircle, Calendar, Repeat, Layers, CheckCircle2 } from "l
 import { formatDateToInput, parseBRLToCents, formatCentsToBRL } from "@/lib/formatters";
 import { desdobrarParcelas, determinarStatusPorVencimento } from "@/lib/installments";
 
+interface ModalAuxData {
+  accounts: any[];
+  categoriesTree: any[];
+  flatCategories: any[];
+  suppliers: any[];
+  fetchedAt: number;
+}
+
+let modalAuxDataCache: ModalAuxData | null = null;
+let modalAuxDataPromise: Promise<ModalAuxData> | null = null;
+
+export function invalidateTransactionModalCache() {
+  modalAuxDataCache = null;
+  modalAuxDataPromise = null;
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("snack:transaction-updated", () => {
+    invalidateTransactionModalCache();
+  });
+}
+
 interface InstallmentRow {
   installmentNumber: number;
   totalInstallments: number;
@@ -88,20 +110,51 @@ export function TransactionModal({
 
     async function loadData() {
       try {
-        setLoadingInitial(true);
-        const [accRes, catRes, supRes] = await Promise.all([
-          fetch("/api/accounts"),
-          fetch("/api/categories"),
-          fetch("/api/suppliers?status=ACTIVE"),
-        ]);
-        const accData = await accRes.json();
-        const catData = await catRes.json();
-        const supData = await supRes.json();
+        const now = Date.now();
+        let auxData = modalAuxDataCache;
 
-        const activeAccounts = (accData.accounts || []).filter((a: any) => a.active);
-        setAccounts(activeAccounts);
-        setCategoriesTree(catData.tree || []);
-        setSuppliers(supData.suppliers || []);
+        // Se já tivermos dados em cache recentes (menos de 5 min), carrega sem spinner pesado
+        if (auxData && (now - auxData.fetchedAt < 300000)) {
+          setAccounts(auxData.accounts);
+          setCategoriesTree(auxData.categoriesTree);
+          setSuppliers(auxData.suppliers);
+          setLoadingInitial(false);
+        } else {
+          setLoadingInitial(true);
+          if (!modalAuxDataPromise) {
+            modalAuxDataPromise = (async () => {
+              const [accRes, catRes, supRes] = await Promise.all([
+                fetch("/api/accounts"),
+                fetch("/api/categories"),
+                fetch("/api/suppliers?status=ACTIVE"),
+              ]);
+              const accData = await accRes.json();
+              const catData = await catRes.json();
+              const supData = await supRes.json();
+
+              const activeAccounts = (accData.accounts || []).filter((a: any) => a.active);
+              const data: ModalAuxData = {
+                accounts: activeAccounts,
+                categoriesTree: catData.tree || [],
+                flatCategories: catData.flat || [],
+                suppliers: supData.suppliers || [],
+                fetchedAt: Date.now(),
+              };
+              modalAuxDataCache = data;
+              return data;
+            })().finally(() => {
+              modalAuxDataPromise = null;
+            });
+          }
+
+          auxData = await modalAuxDataPromise;
+          setAccounts(auxData.accounts);
+          setCategoriesTree(auxData.categoriesTree);
+          setSuppliers(auxData.suppliers);
+        }
+
+        const activeAccounts = auxData.accounts;
+        const flatCategories = auxData.flatCategories;
 
         if (transactionToEdit) {
           setKind(transactionToEdit.kind);
@@ -119,7 +172,7 @@ export function TransactionModal({
           setInstallmentRows([]);
 
           // Identificar se a categoria selecionada é pai ou filha
-          const cat = (catData.flat || []).find((c: any) => c.id === transactionToEdit.categoryId);
+          const cat = (flatCategories || []).find((c: any) => c.id === transactionToEdit.categoryId);
           if (cat) {
             if (cat.parentId) {
               setSelectedParentCatId(cat.parentId);
