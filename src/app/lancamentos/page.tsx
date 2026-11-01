@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { AppLayout } from "@/components/AppLayout";
+import { getCachedData, setCachedData, fetchWithDedupe, invalidateCache } from "@/lib/useCachedFetch";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatCentsToBRL, formatDateToBR } from "@/lib/formatters";
 import {
@@ -112,10 +112,10 @@ export default function TransactionsPage() {
   const fetchTransactions = async (
     pageToFetch = pagination.page,
     limitToFetch = pagination.limit,
-    searchOverride?: string
+    searchOverride?: string,
+    silent = false
   ) => {
     try {
-      setLoading(true);
       const params = new URLSearchParams();
       params.set("page", String(pageToFetch));
       params.set("limit", String(limitToFetch));
@@ -132,9 +132,35 @@ export default function TransactionsPage() {
       if (startDate) params.set("startDate", startDate);
       if (endDate) params.set("endDate", endDate);
 
-      const res = await fetch(`/api/transactions?${params.toString()}`);
-      if (!res.ok) throw new Error("Erro ao carregar lançamentos");
-      const json = await res.json();
+      const cacheKey = `/api/transactions?${params.toString()}`;
+      const cached = getCachedData(cacheKey);
+
+      if (cached) {
+        setTransactions(cached.transactions || []);
+        setTotals(
+          cached.totals || {
+            incomeCents: 0,
+            expenseCents: 0,
+            resultCents: 0,
+            pendingIncomeCents: 0,
+            pendingExpenseCents: 0,
+          }
+        );
+        setPagination(
+          cached.pagination || {
+            page: pageToFetch,
+            limit: limitToFetch,
+            totalPages: 1,
+            totalCount: 0,
+          }
+        );
+        setLoading(false);
+      } else if (!silent) {
+        setLoading(true);
+      }
+
+      const json = await fetchWithDedupe(cacheKey);
+      setCachedData(cacheKey, json);
 
       setTransactions(json.transactions || []);
       setTotals(
@@ -190,6 +216,10 @@ export default function TransactionsPage() {
         body: JSON.stringify({ status: "PAID" }),
       });
       if (!res.ok) throw new Error("Falha ao dar baixa no lançamento");
+      invalidateCache("/api/transactions");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("snack:transaction-updated"));
+      }
       fetchTransactions(pagination.page);
     } catch (err) {
       console.error(err);
@@ -263,7 +293,7 @@ export default function TransactionsPage() {
   };
 
   return (
-    <AppLayout>
+    <>
       <div className="space-y-6">
         {/* Cabeçalho */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
@@ -934,6 +964,6 @@ export default function TransactionsPage() {
           </div>
         </div>
       )}
-    </AppLayout>
+    </>
   );
 }
