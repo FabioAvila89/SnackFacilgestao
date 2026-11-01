@@ -29,3 +29,7 @@ scripts/dump.sql
 !prisma/migrations/**/*.sql
 
 *.tsbuildinfo
+
+# Agent browser local cache / data
+.agent-browser/
+

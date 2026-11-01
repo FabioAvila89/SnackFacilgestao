@@ -51,7 +51,7 @@ const baseNavItems = [
 
 export function MobileHeader({ onOpenNewTransaction }: MobileHeaderProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const { user: currentUser, logout: handleLogout } = useAuth();
+  const { user: currentUser, loading, logout: handleLogout } = useAuth();
   const pathname = usePathname();
 
   const navItems = [...baseNavItems];
@@ -117,7 +117,7 @@ export function MobileHeader({ onOpenNewTransaction }: MobileHeaderProps) {
                 <div>
                   <div className="font-bold text-white text-sm">Snack Fácil</div>
                   <div className="text-[11px] text-orange-400">
-                    {currentUser?.name || "Controle Financeiro"}
+                    {loading ? "Carregando..." : (currentUser?.name || "Controle Financeiro")}
                   </div>
                 </div>
               </div>

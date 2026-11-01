@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 
 export interface UserInfo {
   id: string;
@@ -41,13 +41,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserInfo | null>(cachedUser);
   const [loading, setLoading] = useState<boolean>(cachedUser === null);
   const router = useRouter();
+  const pathname = usePathname();
 
   const fetchUser = useCallback(async () => {
     // Deduplica chamadas concorrentes para /api/auth/me
     if (!userFetchPromise) {
       userFetchPromise = (async () => {
         try {
-          const res = await fetch("/api/auth/me");
+          const res = await fetch("/api/auth/me", { cache: "no-store" });
           if (res.ok) {
             const data = await res.json();
             cachedUser = data.user;
@@ -69,10 +70,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const u = await userFetchPromise;
       setUser(u);
+
+      // Se a sessão expirou ou for inválida (ex: troca de banco de dados), redireciona para login
+      if (!u && typeof window !== "undefined") {
+        const currentPath = window.location.pathname;
+        const isPublicPath =
+          currentPath === "/login" ||
+          currentPath === "/trocar-senha-obrigatoria";
+        if (!isPublicPath) {
+          router.push(`/login?redirect=${encodeURIComponent(currentPath)}`);
+        }
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     // Se ainda não temos o usuário em cache, busca imediatamente
