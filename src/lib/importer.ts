@@ -12,6 +12,7 @@ export interface ImportRowCandidate {
   categoriaRaw: string;
   subcategoriaRaw?: string;
   contaRaw: string;
+  observacoesRaw?: string;
 }
 
 export interface ValidatedImportRow {
@@ -27,6 +28,7 @@ export interface ValidatedImportRow {
   categoryName?: string;
   subcategoryName?: string;
   accountName?: string;
+  notes?: string;
   // Resolved IDs
   accountId?: string;
   categoryId?: string;
@@ -54,37 +56,259 @@ export interface KnownAccountLookup {
 }
 
 /**
+ * Normaliza uma string de cabeçalho removendo BOM, acentos e caracteres de controle
+ */
+export function normalizeHeaderKey(key: string): string {
+  return String(key || "")
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+/**
+ * Busca o valor de uma coluna a partir de uma lista de aliases ou fallback regex
+ */
+export function getColumnValue(
+  rowObj: Record<string, any>,
+  aliases: string[],
+  regexFallback?: RegExp
+): string {
+  // 1. Busca exata nas chaves normalizadas
+  for (const alias of aliases) {
+    const val = rowObj[alias];
+    if (val !== undefined && val !== null && String(val).trim() !== "") {
+      return String(val).trim();
+    }
+  }
+
+  const keys = Object.keys(rowObj);
+
+  // 2. Busca ignorando caracteres especiais (espaços, parênteses, cifrões, pontuação)
+  for (const key of keys) {
+    const cleanKey = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+    for (const alias of aliases) {
+      const cleanAlias = alias.replace(/[^a-z0-9]/gi, "").toLowerCase();
+      if (cleanKey === cleanAlias) {
+        const val = rowObj[key];
+        if (val !== undefined && val !== null && String(val).trim() !== "") {
+          return String(val).trim();
+        }
+      }
+    }
+  }
+
+  // 3. Fallback com expressão regular
+  if (regexFallback) {
+    for (const key of keys) {
+      if (regexFallback.test(key)) {
+        const val = rowObj[key];
+        if (val !== undefined && val !== null && String(val).trim() !== "") {
+          return String(val).trim();
+        }
+      }
+    }
+  }
+
+  return "";
+}
+
+/**
+ * Extrai o valor de uma célula do ExcelJS considerando datas, fórmulas, textos ricos etc.
+ */
+export function formatExcelCellValue(cellVal: any): string {
+  if (cellVal === null || cellVal === undefined) return "";
+  if (cellVal instanceof Date) {
+    const day = String(cellVal.getUTCDate()).padStart(2, "0");
+    const month = String(cellVal.getUTCMonth() + 1).padStart(2, "0");
+    const year = cellVal.getUTCFullYear();
+    return `${day}/${month}/${year}`;
+  }
+  if (typeof cellVal === "object") {
+    if ("result" in cellVal && cellVal.result !== undefined && cellVal.result !== null) {
+      return String(cellVal.result).trim();
+    }
+    if (Array.isArray(cellVal.richText)) {
+      return cellVal.richText.map((t: any) => t.text || "").join("").trim();
+    }
+    if ("text" in cellVal && typeof cellVal.text === "string") {
+      return cellVal.text.trim();
+    }
+  }
+  return String(cellVal).trim();
+}
+
+/**
+ * Extrai e normaliza as colunas de uma linha para ImportRowCandidate
+ */
+export function extractRowCandidate(
+  rowObj: Record<string, any>,
+  rowIndex: number
+): ImportRowCandidate | null {
+  const dataRaw = getColumnValue(
+    rowObj,
+    [
+      "data",
+      "date",
+      "dt",
+      "dt_lancamento",
+      "data_lancamento",
+      "data lancamento",
+      "data transacao",
+      "data_transacao",
+      "data movimento",
+      "data_movimento",
+    ],
+    /^(data|date|dt)($|[^a-z])/i
+  );
+
+  const tipoRaw = getColumnValue(
+    rowObj,
+    [
+      "tipo",
+      "type",
+      "natureza",
+      "tipo de lancamento",
+      "tipo_lancamento",
+      "tipo transacao",
+      "tipo_transacao",
+      "operacao",
+      "kind",
+      "d/c",
+      "debito/credito",
+    ],
+    /^(tipo|type|natureza|operacao|kind)/i
+  );
+
+  const valorRaw = getColumnValue(
+    rowObj,
+    [
+      "valor",
+      "valor (r$)",
+      "valor(r$)",
+      "valor r$",
+      "valor_r$",
+      "valor (brl)",
+      "valor(brl)",
+      "valor brl",
+      "valor_brl",
+      "valor total",
+      "valor_total",
+      "valor liquido",
+      "valor_liquido",
+      "amount",
+      "amount (r$)",
+      "amount(r$)",
+      "amount r$",
+      "preco",
+      "price",
+      "total",
+      "quantia",
+    ],
+    /^(valor|amount|preco|price|quantia)/i
+  );
+
+  const descricaoRaw = getColumnValue(
+    rowObj,
+    [
+      "descricao",
+      "description",
+      "desc",
+      "historico",
+      "detalhes",
+      "detalhe",
+      "titulo",
+      "memo",
+    ],
+    /^(desc|historico|memo|detalhe)/i
+  );
+
+  const categoriaRaw = getColumnValue(
+    rowObj,
+    ["categoria", "category", "cat", "categoria principal"],
+    /^(categoria|category)/i
+  );
+
+  const subcategoriaRaw = getColumnValue(
+    rowObj,
+    [
+      "subcategoria",
+      "subcategory",
+      "sub_categoria",
+      "sub categoria",
+      "sub-categoria",
+      "subcat",
+    ],
+    /(subcategoria|subcategory|sub_categoria|subcat)/i
+  );
+
+  const contaRaw = getColumnValue(
+    rowObj,
+    [
+      "conta",
+      "account",
+      "banco",
+      "conta bancaria",
+      "conta_bancaria",
+      "carteira",
+      "conta destino",
+      "conta origem",
+    ],
+    /^(conta|account|banco|carteira)/i
+  );
+
+  const observacoesRaw = getColumnValue(
+    rowObj,
+    [
+      "observacoes",
+      "observacao",
+      "obs",
+      "notes",
+      "nota",
+      "notas",
+      "comentario",
+      "comentarios",
+    ],
+    /^(observac|obs|notes|nota|coment)/i
+  );
+
+  if (dataRaw || tipoRaw || valorRaw || descricaoRaw) {
+    return {
+      rowIndex,
+      dataRaw,
+      tipoRaw,
+      valorRaw,
+      descricaoRaw,
+      categoriaRaw,
+      subcategoriaRaw: subcategoriaRaw || undefined,
+      contaRaw,
+      observacoesRaw: observacoesRaw || undefined,
+    };
+  }
+
+  return null;
+}
+
+/**
  * Lê arquivo CSV em texto bruto e converte em linhas candidatas
  */
 export function parseCSVContent(csvText: string): ImportRowCandidate[] {
   const parsed = Papa.parse<Record<string, string>>(csvText, {
     header: true,
     skipEmptyLines: "greedy",
-    transformHeader: (h) =>
-      h.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""),
+    transformHeader: (h) => normalizeHeaderKey(h),
   });
 
-  return parsed.data.map((row, index) => {
-    // Normalizar chaves comuns
-    const dataRaw = row["data"] || row["date"] || "";
-    const tipoRaw = row["tipo"] || row["type"] || "";
-    const valorRaw = row["valor"] || row["amount"] || "";
-    const descricaoRaw = row["descricao"] || row["description"] || "";
-    const categoriaRaw = row["categoria"] || row["category"] || "";
-    const subcategoriaRaw = row["subcategoria"] || row["subcategory"] || "";
-    const contaRaw = row["conta"] || row["account"] || "";
-
-    return {
-      rowIndex: index + 2, // Considerando linha 1 como cabeçalho
-      dataRaw: String(dataRaw).trim(),
-      tipoRaw: String(tipoRaw).trim(),
-      valorRaw: String(valorRaw).trim(),
-      descricaoRaw: String(descricaoRaw).trim(),
-      categoriaRaw: String(categoriaRaw).trim(),
-      subcategoriaRaw: String(subcategoriaRaw).trim(),
-      contaRaw: String(contaRaw).trim(),
-    };
+  const candidates: ImportRowCandidate[] = [];
+  parsed.data.forEach((row, index) => {
+    const candidate = extractRowCandidate(row, index + 2); // Considerando linha 1 como cabeçalho
+    if (candidate) {
+      candidates.push(candidate);
+    }
   });
+
+  return candidates;
 }
 
 /**
@@ -104,49 +328,18 @@ export async function parseXLSXBuffer(buffer: ArrayBuffer | Buffer): Promise<Imp
   worksheet.eachRow((row, rowNumber) => {
     const values = (row.values as any[]) || [];
     if (rowNumber === 1) {
-      headers = values.slice(1).map((v) =>
-        String(v || "")
-          .trim()
-          .toLowerCase()
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "")
-      );
+      headers = values.slice(1).map((v) => normalizeHeaderKey(String(v || "")));
       return;
     }
 
     const rowObj: Record<string, string> = {};
     headers.forEach((h, idx) => {
-      const cellVal = values[idx + 1];
-      if (cellVal instanceof Date) {
-        // Formatar para dd/mm/aaaa
-        const day = String(cellVal.getUTCDate()).padStart(2, "0");
-        const month = String(cellVal.getUTCMonth() + 1).padStart(2, "0");
-        const year = cellVal.getUTCFullYear();
-        rowObj[h] = `${day}/${month}/${year}`;
-      } else {
-        rowObj[h] = cellVal !== undefined && cellVal !== null ? String(cellVal).trim() : "";
-      }
+      rowObj[h] = formatExcelCellValue(values[idx + 1]);
     });
 
-    const dataRaw = rowObj["data"] || rowObj["date"] || "";
-    const tipoRaw = rowObj["tipo"] || rowObj["type"] || "";
-    const valorRaw = rowObj["valor"] || rowObj["amount"] || "";
-    const descricaoRaw = rowObj["descricao"] || rowObj["description"] || "";
-    const categoriaRaw = rowObj["categoria"] || rowObj["category"] || "";
-    const subcategoriaRaw = rowObj["subcategoria"] || rowObj["subcategory"] || "";
-    const contaRaw = rowObj["conta"] || rowObj["account"] || "";
-
-    if (dataRaw || tipoRaw || valorRaw || descricaoRaw) {
-      candidates.push({
-        rowIndex: rowNumber,
-        dataRaw,
-        tipoRaw,
-        valorRaw,
-        descricaoRaw,
-        categoriaRaw,
-        subcategoriaRaw,
-        contaRaw,
-      });
+    const candidate = extractRowCandidate(rowObj, rowNumber);
+    if (candidate) {
+      candidates.push(candidate);
     }
   });
 
@@ -215,8 +408,8 @@ export function validateImportCandidates(
       errors.push("Tipo inválido. Use 'entrada' ou 'saída'.");
     }
 
-    // 3. Validar Valor
-    const amountCents = parseBRLToCents(candidate.valorRaw);
+    // 3. Validar Valor (sempre positivo internamente)
+    const amountCents = Math.abs(parseBRLToCents(candidate.valorRaw));
     if (amountCents <= 0) {
       errors.push("Valor deve ser maior que zero.");
     }
@@ -289,6 +482,7 @@ export function validateImportCandidates(
       categoryName: candidate.categoriaRaw,
       subcategoryName: candidate.subcategoriaRaw || undefined,
       accountName: candidate.contaRaw,
+      notes: candidate.observacoesRaw || undefined,
       accountId: matchedAccount?.id,
       categoryId: matchedCategory?.id,
     });
