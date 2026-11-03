@@ -134,7 +134,7 @@ export async function GET(req: Request) {
   });
 
   // Formata coluna de valores
-  worksheet.getColumn(3).numFmt = "R$ #,##0.00";
+  worksheet.getColumn(5).numFmt = "R$ #,##0.00";
 
   const buffer = await workbook.xlsx.writeBuffer();
 

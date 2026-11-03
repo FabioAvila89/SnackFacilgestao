@@ -29,6 +29,11 @@ export function parseBRLToCents(val: string | number): number {
   // Remove espaços, "R$", tabs etc.
   let clean = val.replace(/R\$/gi, "").trim();
 
+  // Tratamento de formato contábil: (123,45) -> -123,45
+  if (clean.startsWith("(") && clean.endsWith(")")) {
+    clean = "-" + clean.slice(1, -1).trim();
+  }
+
   // Se tiver tanto ponto quanto vírgula (ex: 1.234,56), remove os pontos de milhar e troca a vírgula por ponto
   if (clean.includes(".") && clean.includes(",")) {
     clean = clean.replace(/\./g, "").replace(",", ".");

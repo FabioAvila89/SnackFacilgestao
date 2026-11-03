@@ -78,7 +78,7 @@ export default function ImportExportPage() {
           description: r.description,
           accountId: r.accountId,
           categoryId: r.categoryId,
-          notes: null,
+          notes: r.notes || null,
         }));
 
       const res = await fetch("/api/import/confirm", {
