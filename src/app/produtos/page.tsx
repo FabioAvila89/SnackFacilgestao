@@ -670,10 +670,10 @@ export default function ProductsPage() {
 
         {/* Modal de Cadastro / Edição */}
         {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
-            <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-200">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm">
+            <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-2xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
               {/* Header */}
-              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 flex-shrink-0">
                 <div className="flex items-center gap-2.5">
                   <Package className="w-5 h-5 text-orange-500" />
                   <h2 className="text-lg font-bold text-slate-800">
@@ -681,6 +681,7 @@ export default function ProductsPage() {
                   </h2>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setIsModalOpen(false)}
                   className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
                 >
@@ -688,8 +689,9 @@ export default function ProductsPage() {
                 </button>
               </div>
 
-              {/* Form */}
-              <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              {/* Form com corpo com scroll interno e footer fixo */}
+              <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                <div className="p-6 space-y-4 overflow-y-auto flex-1">
                 {modalError && (
                   <div className="p-3 bg-red-50 border-l-4 border-red-500 rounded text-sm text-red-700 flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 flex-shrink-0" />
@@ -926,8 +928,10 @@ export default function ProductsPage() {
                   </label>
                 </div>
 
-                {/* Footer Buttons */}
-                <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+                </div>
+
+                {/* Footer Buttons fixados na base */}
+                <div className="px-6 py-3.5 bg-slate-50/80 border-t border-slate-100 flex items-center justify-end gap-3 flex-shrink-0">
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}

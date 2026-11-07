@@ -88,7 +88,7 @@ export async function GET(req: Request) {
     transactionCount: c._count.transactions,
   }));
 
-  return NextResponse.json({ tree, flat });
+  return NextResponse.json({ tree, flat, categories: tree });
 }
 
 export async function POST(req: Request) {

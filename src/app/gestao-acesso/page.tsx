@@ -776,29 +776,30 @@ export default function GestaoAcessoPage() {
 
       {/* ======================= MODAL: CADASTRAR USUÁRIO ======================= */}
       {isCreateOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
-          <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex-shrink-0">
               <div className="flex items-center gap-2">
                 <UserPlus className="w-5 h-5 text-orange-600" />
                 <h3 className="text-lg font-bold text-slate-800">Cadastrar Novo Usuário</h3>
               </div>
               <button
+                type="button"
                 onClick={() => setIsCreateOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            {formError && (
-              <div className="mx-6 mt-4 p-3 bg-red-50 border-l-4 border-red-500 rounded text-xs text-red-700 flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                <span>{formError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleCreateUser} className="p-6 space-y-4">
+            <form onSubmit={handleCreateUser} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                {formError && (
+                  <div className="p-3 bg-red-50 border-l-4 border-red-500 rounded text-xs text-red-700 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span>{formError}</span>
+                  </div>
+                )}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
                   Nome Completo
@@ -850,7 +851,9 @@ export default function GestaoAcessoPage() {
                 O sistema gerará uma senha temporária aleatória segura exibida na próxima etapa. O usuário será obrigado a alterá-la no primeiro acesso.
               </div>
 
-              <div className="pt-2 flex justify-end gap-2.5">
+              </div>
+
+              <div className="px-6 py-3.5 bg-slate-50/80 border-t border-slate-100 flex items-center justify-end gap-2.5 flex-shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsCreateOpen(false)}
@@ -873,29 +876,30 @@ export default function GestaoAcessoPage() {
 
       {/* ======================= MODAL: EDITAR USUÁRIO ======================= */}
       {isEditOpen && userToEdit && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
-          <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex-shrink-0">
               <div className="flex items-center gap-2">
                 <Edit2 className="w-5 h-5 text-orange-600" />
                 <h3 className="text-lg font-bold text-slate-800">Editar Usuário</h3>
               </div>
               <button
+                type="button"
                 onClick={() => setIsEditOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            {formError && (
-              <div className="mx-6 mt-4 p-3 bg-red-50 border-l-4 border-red-500 rounded text-xs text-red-700 flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                <span>{formError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleEditUser} className="p-6 space-y-4">
+            <form onSubmit={handleEditUser} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                {formError && (
+                  <div className="p-3 bg-red-50 border-l-4 border-red-500 rounded text-xs text-red-700 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span>{formError}</span>
+                  </div>
+                )}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
                   Nome
@@ -940,7 +944,9 @@ export default function GestaoAcessoPage() {
                 </p>
               </div>
 
-              <div className="pt-2 flex justify-end gap-2.5">
+              </div>
+
+              <div className="px-6 py-3.5 bg-slate-50/80 border-t border-slate-100 flex items-center justify-end gap-2.5 flex-shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsEditOpen(false)}
@@ -963,8 +969,8 @@ export default function GestaoAcessoPage() {
 
       {/* ======================= MODAL: EXIBIÇÃO ÚNICA DA SENHA TEMPORÁRIA ======================= */}
       {tempPasswordModal.isOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
-          <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
             <div className="p-6 space-y-4">
               <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
                 <KeyRound className="w-6 h-6" />
@@ -1027,8 +1033,8 @@ export default function GestaoAcessoPage() {
 
       {/* ======================= MODAL: CONFIRMAÇÃO DE AÇÃO ======================= */}
       {actionConfirm.isOpen && actionConfirm.user && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
-          <div className="relative bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200 p-6 space-y-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-sm w-full max-h-[90vh] overflow-y-auto border border-slate-200 animate-in fade-in zoom-in-95 duration-200 p-6 space-y-4">
             <div
               className={`w-12 h-12 rounded-2xl flex items-center justify-center mx-auto ${
                 actionConfirm.type === "DELETE_USER"
