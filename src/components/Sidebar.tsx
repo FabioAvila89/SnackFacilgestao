@@ -25,48 +25,58 @@ interface SidebarProps {
   onOpenNewTransaction: () => void;
 }
 
-interface UserInfo {
-  id: string;
-  name: string;
-  email: string;
-  role: "ADMIN" | "EDITOR" | "VIEWER";
+interface NavItem {
+  href: string;
+  label: string;
+  icon: any;
 }
 
-const baseNavItems = [
-  { href: "/", label: "Início (Dashboard)", icon: LayoutDashboard },
-  { href: "/lancamentos", label: "Lançamentos", icon: Receipt },
-  { href: "/produtos", label: "Produtos", icon: Package },
-  { href: "/estoque", label: "Estoque", icon: Boxes },
-  { href: "/relatorios/fluxo", label: "Entradas × Saídas", icon: ArrowUpDown },
-  { href: "/relatorios/categorias", label: "Gastos por Categoria", icon: PieChart },
-  { href: "/relatorios/dre", label: "DRE", icon: FileSpreadsheet },
-  { href: "/contas", label: "Contas", icon: Landmark },
-  { href: "/fornecedores", label: "Fornecedores", icon: Truck },
-  { href: "/categorias", label: "Categorias", icon: Tags },
-  { href: "/importar-exportar", label: "Importar / Exportar", icon: FileUp },
-];
+interface NavSection {
+  title: string;
+  items: NavItem[];
+}
 
 export function Sidebar({ onOpenNewTransaction }: SidebarProps) {
   const pathname = usePathname();
   const { user: currentUser, loading, logout: handleLogout } = useAuth();
 
-  const navItems = [...baseNavItems];
-
-  // Gestão de Acesso disponível exclusivamente para ADMIN
-  if (currentUser?.role === "ADMIN") {
-    navItems.push({
-      href: "/gestao-acesso",
-      label: "Gestão de Acesso",
-      icon: Users,
-    });
-  }
-
-  // Minha Conta disponível para todos os usuários logados
-  navItems.push({
-    href: "/minha-conta",
-    label: "Minha Conta",
-    icon: UserCircle,
-  });
+  const navSections: NavSection[] = [
+    {
+      title: "Operação",
+      items: [
+        { href: "/", label: "Início (Dashboard)", icon: LayoutDashboard },
+        { href: "/lancamentos", label: "Lançamentos", icon: Receipt },
+        { href: "/produtos", label: "Produtos", icon: Package },
+        { href: "/estoque", label: "Estoque", icon: Boxes },
+      ],
+    },
+    {
+      title: "Relatórios & DRE",
+      items: [
+        { href: "/relatorios/fluxo", label: "Entradas × Saídas", icon: ArrowUpDown },
+        { href: "/relatorios/categorias", label: "Gastos por Categoria", icon: PieChart },
+        { href: "/relatorios/dre", label: "DRE", icon: FileSpreadsheet },
+      ],
+    },
+    {
+      title: "Cadastros",
+      items: [
+        { href: "/contas", label: "Contas", icon: Landmark },
+        { href: "/fornecedores", label: "Fornecedores", icon: Truck },
+        { href: "/categorias", label: "Categorias", icon: Tags },
+      ],
+    },
+    {
+      title: "Sistema",
+      items: [
+        { href: "/importar-exportar", label: "Importar / Exportar", icon: FileUp },
+        ...(currentUser?.role === "ADMIN"
+          ? [{ href: "/gestao-acesso", label: "Gestão de Acesso", icon: Users }]
+          : []),
+        { href: "/minha-conta", label: "Minha Conta", icon: UserCircle },
+      ],
+    },
+  ];
 
   const getRoleBadge = (role?: string) => {
     switch (role) {
@@ -96,7 +106,7 @@ export function Sidebar({ onOpenNewTransaction }: SidebarProps) {
 
       {/* Botão Atalho Novo Lançamento (visível para quem pode criar) */}
       {currentUser?.role !== "VIEWER" && (
-        <div className="px-4 pt-5 pb-3">
+        <div className="px-4 pt-5 pb-2">
           <button
             onClick={onOpenNewTransaction}
             className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-sm rounded-xl shadow-lg shadow-orange-500/25 transition-all cursor-pointer active:scale-[0.98]"
@@ -107,31 +117,38 @@ export function Sidebar({ onOpenNewTransaction }: SidebarProps) {
         </div>
       )}
 
-      {/* Navegação Principal */}
-      <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = pathname === item.href;
+      {/* Navegação Principal Agrupada por Seções */}
+      <nav className="flex-1 px-3 py-2 space-y-4 overflow-y-auto">
+        {navSections.map((section) => (
+          <div key={section.title} className="space-y-1">
+            <div className="px-3 pt-1 text-[10px] font-bold tracking-wider text-slate-500 uppercase">
+              {section.title}
+            </div>
+            {section.items.map((item) => {
+              const Icon = item.icon;
+              const isActive = pathname === item.href;
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-sm transition-all ${
-                isActive
-                  ? "bg-orange-500/15 text-orange-400 border border-orange-500/30 font-semibold"
-                  : "text-slate-400 hover:text-slate-100 hover:bg-slate-800/60"
-              }`}
-            >
-              <Icon
-                className={`w-4 h-4 ${
-                  isActive ? "text-orange-400" : "text-slate-400 group-hover:text-slate-200"
-                }`}
-              />
-              <span>{item.label}</span>
-            </Link>
-          );
-        })}
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-xl font-medium text-sm transition-all ${
+                    isActive
+                      ? "bg-orange-500/15 text-orange-400 border border-orange-500/30 font-semibold"
+                      : "text-slate-400 hover:text-slate-100 hover:bg-slate-800/60"
+                  }`}
+                >
+                  <Icon
+                    className={`w-4 h-4 ${
+                      isActive ? "text-orange-400" : "text-slate-400 group-hover:text-slate-200"
+                    }`}
+                  />
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       {/* Footer / Logout */}

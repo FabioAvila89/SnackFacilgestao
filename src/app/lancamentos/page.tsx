@@ -22,6 +22,8 @@ import {
   Truck,
   AlertCircle,
   Ban,
+  X,
+  RotateCcw,
 } from "lucide-react";
 import { TransactionModal } from "@/components/TransactionModal";
 
@@ -75,6 +77,43 @@ export default function TransactionsPage() {
     }, 300);
     return () => clearTimeout(handler);
   }, [search]);
+
+  // Lê filtros passados via URL ao carregar (ex: atalhos vindo do Dashboard)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const statusParam = urlParams.get("status");
+      const kindParam = urlParams.get("kind");
+      if (statusParam === "PAID" || statusParam === "PENDING" || statusParam === "RECURRING") {
+        setStatusFilter(statusParam);
+      }
+      if (kindParam === "INCOME" || kindParam === "EXPENSE") {
+        setKind(kindParam);
+      }
+    }
+  }, []);
+
+  const hasActiveFilters = Boolean(
+    search ||
+    kind !== "ALL" ||
+    statusFilter !== "ALL" ||
+    accountId ||
+    categoryId ||
+    startDate ||
+    endDate
+  );
+
+  const handleResetFilters = () => {
+    setSearch("");
+    setDebouncedSearch("");
+    setKind("ALL");
+    setStatusFilter("ALL");
+    setAccountId("");
+    setCategoryId("");
+    setStartDate("");
+    setEndDate("");
+    setPagination((prev) => ({ ...prev, page: 1 }));
+  };
 
   // Dados auxiliares para selects
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -339,8 +378,18 @@ export default function TransactionsPage() {
                   placeholder="Buscar por descrição, fornecedor ou observações..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                  className="w-full pl-10 pr-9 py-2 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                 />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch("")}
+                    title="Limpar texto da busca"
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
               <button
                 type="submit"
@@ -398,6 +447,18 @@ export default function TransactionsPage() {
                 <span>Recorrentes</span>
               </button>
             </div>
+
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-xl border border-rose-200 transition-colors cursor-pointer self-start md:self-auto"
+                title="Limpar todos os filtros e mostrar todos os registros"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Limpar Filtros</span>
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-2 border-t border-slate-100 text-xs">
@@ -550,7 +611,146 @@ export default function TransactionsPage() {
 
         {/* Tabela de Lançamentos */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
+          {/* Visualização Mobile em Cards (Ergonômica para Smartphone) */}
+          <div className="md:hidden divide-y divide-slate-100">
+            {loading ? (
+              <div className="p-8 text-center text-slate-400 font-medium text-xs">
+                Carregando lançamentos...
+              </div>
+            ) : transactions.length === 0 ? (
+              <div className="p-8 text-center text-slate-400 font-medium text-xs">
+                Nenhum lançamento encontrado para os filtros selecionados.
+              </div>
+            ) : (
+              transactions.map((tx) => {
+                const isIncome = tx.kind === "INCOME";
+                const isPending = tx.status === "PENDING";
+                const isOverdue = isPending && isDateOverdue(tx.dueDate);
+                const hasSub = !!tx.category.parentId;
+                const catTitle = hasSub ? tx.category.parent?.name : tx.category.name;
+                const subTitle = hasSub ? tx.category.name : null;
+
+                return (
+                  <div key={tx.id} className="p-4 space-y-2.5 hover:bg-slate-50/70 transition-colors">
+                    {/* Linha 1: Data e Valor */}
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-slate-500">
+                        <span className="font-semibold text-slate-700">{formatDateToBR(tx.date)}</span>
+                        {tx.dueDate && (
+                          <span className="text-[11px] text-slate-400 ml-1.5">
+                            • Venc: {formatDateToBR(tx.dueDate)}
+                          </span>
+                        )}
+                      </div>
+                      <div className={`text-base font-black ${isIncome ? "text-emerald-600" : "text-rose-600"}`}>
+                        {isIncome ? "+ " : "- "}
+                        {formatCentsToBRL(tx.amountCents)}
+                      </div>
+                    </div>
+
+                    {/* Linha 2: Descrição e Badges */}
+                    <div>
+                      <div className="font-bold text-slate-900 text-sm leading-tight">{tx.description}</div>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                        {tx.isInstallment && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            <Layers className="w-2.5 h-2.5" />
+                            <span>{tx.installmentNumber}/{tx.totalInstallments}</span>
+                          </span>
+                        )}
+                        {tx.isRecurring && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                            <Repeat className="w-2.5 h-2.5" />
+                            <span>
+                              {tx.recurrenceFrequency === "WEEKLY"
+                                ? "Semanal"
+                                : tx.recurrenceFrequency === "YEARLY"
+                                ? "Anual"
+                                : "Mensal"}
+                            </span>
+                          </span>
+                        )}
+                        {tx.supplier && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                            <Truck className="w-2.5 h-2.5 text-slate-500" />
+                            <span>{tx.supplier.name}</span>
+                          </span>
+                        )}
+                      </div>
+                      {tx.notes && (
+                        <p className="text-xs text-slate-400 mt-1 truncate">{tx.notes}</p>
+                      )}
+                    </div>
+
+                    {/* Linha 3: Categoria e Conta */}
+                    <div className="flex flex-wrap items-center justify-between text-xs gap-2 pt-1">
+                      <div className="text-slate-600">
+                        <span className="font-medium text-slate-800">{catTitle}</span>
+                        {subTitle && <span className="text-slate-400 ml-1">↳ {subTitle}</span>}
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700">
+                        {tx.account.name}
+                      </span>
+                    </div>
+
+                    {/* Linha 4: Status + Ações Mobile */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                      <div>
+                        {!isPending ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>{isIncome ? "Recebido" : "Pago"}</span>
+                          </span>
+                        ) : isOverdue ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-300">
+                            <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                            <span>Atrasado</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                            <Clock className="w-3.5 h-3.5 text-amber-600" />
+                            <span>{isIncome ? "A Receber" : "A Pagar"}</span>
+                          </span>
+                        )}
+                      </div>
+
+                      {currentUser?.role !== "VIEWER" && (
+                        <div className="flex items-center gap-1.5">
+                          {isPending && (
+                            <button
+                              onClick={() => handleQuickMarkPaid(tx.id)}
+                              disabled={markingPaidId === tx.id}
+                              className="px-2.5 py-1 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Baixar</span>
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleEdit(tx)}
+                            title="Editar lançamento"
+                            className="p-1.5 text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setDeleteTx(tx)}
+                            title="Excluir lançamento"
+                            className="p-1.5 text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Visualização Desktop em Tabela */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 text-[11px] uppercase tracking-wider font-bold text-slate-500 border-b border-slate-200">
