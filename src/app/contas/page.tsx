@@ -256,7 +256,7 @@ export default function AccountsPage() {
       {/* Modal Criar / Editar Conta */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95">
+          <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95">
             <h3 className="font-bold text-slate-900 text-lg mb-4">
               {accountToEdit ? "Editar Conta" : "Nova Conta"}
             </h3>
