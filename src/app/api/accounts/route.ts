@@ -13,50 +13,74 @@ export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
-  const accounts = await prisma.account.findMany({
-    where: { organizationId: user.organizationId },
-    orderBy: { createdAt: "asc" },
-    include: {
-      transactions: {
-        select: {
-          kind: true,
-          amountCents: true,
-          status: true,
-        },
-      },
-    },
-  });
+  // Executa queries agregadas no banco em paralelo (evita carregar milhares de transações na memória)
+  const [accounts, txAggregates] = await Promise.all([
+    prisma.account.findMany({
+      where: { organizationId: user.organizationId },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.transaction.groupBy({
+      by: ["accountId", "kind", "status"],
+      where: { organizationId: user.organizationId },
+      _sum: { amountCents: true },
+      _count: { id: true },
+    }),
+  ]);
+
+  // Indexa os totais por conta em O(1) usando um Map
+  const accountTotalsMap = new Map<
+    string,
+    {
+      income: number;
+      expense: number;
+      pendingIncome: number;
+      pendingExpense: number;
+      count: number;
+    }
+  >();
+
+  for (const row of txAggregates) {
+    let entry = accountTotalsMap.get(row.accountId);
+    if (!entry) {
+      entry = { income: 0, expense: 0, pendingIncome: 0, pendingExpense: 0, count: 0 };
+      accountTotalsMap.set(row.accountId, entry);
+    }
+    const sum = row._sum.amountCents || 0;
+    const count = row._count.id || 0;
+    entry.count += count;
+
+    if (row.status === "PENDING") {
+      if (row.kind === "INCOME") entry.pendingIncome += sum;
+      else if (row.kind === "EXPENSE") entry.pendingExpense += sum;
+    } else {
+      if (row.kind === "INCOME") entry.income += sum;
+      else if (row.kind === "EXPENSE") entry.expense += sum;
+    }
+  }
 
   const accountsWithCalculations = accounts.map((acc) => {
-    let income = 0;
-    let expense = 0;
-    let pendingIncome = 0;
-    let pendingExpense = 0;
-
-    for (const t of acc.transactions) {
-      if (t.status === "PENDING") {
-        if (t.kind === "INCOME") pendingIncome += t.amountCents;
-        else if (t.kind === "EXPENSE") pendingExpense += t.amountCents;
-        continue;
-      }
-      if (t.kind === "INCOME") income += t.amountCents;
-      else if (t.kind === "EXPENSE") expense += t.amountCents;
-    }
+    const t = accountTotalsMap.get(acc.id) || {
+      income: 0,
+      expense: 0,
+      pendingIncome: 0,
+      pendingExpense: 0,
+      count: 0,
+    };
 
     return {
       id: acc.id,
       name: acc.name,
       type: acc.type,
       initialBalanceCents: acc.initialBalanceCents,
-      currentBalanceCents: acc.initialBalanceCents + income - expense,
-      totalIncomeCents: income,
-      totalExpenseCents: expense,
-      pendingIncomeCents: pendingIncome,
-      pendingExpenseCents: pendingExpense,
+      currentBalanceCents: acc.initialBalanceCents + t.income - t.expense,
+      totalIncomeCents: t.income,
+      totalExpenseCents: t.expense,
+      pendingIncomeCents: t.pendingIncome,
+      pendingExpenseCents: t.pendingExpense,
       active: acc.active,
       createdAt: acc.createdAt,
       updatedAt: acc.updatedAt,
-      transactionCount: acc.transactions.length,
+      transactionCount: t.count,
     };
   });
 

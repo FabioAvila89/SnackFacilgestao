@@ -25,7 +25,12 @@ import {
   X,
   RotateCcw,
 } from "lucide-react";
-import { TransactionModal } from "@/components/TransactionModal";
+import dynamic from "next/dynamic";
+
+const TransactionModal = dynamic(
+  () => import("@/components/TransactionModal").then((mod) => mod.TransactionModal),
+  { ssr: false }
+);
 
 function getPageNumbers(currentPage: number, totalPages: number): number[] {
   if (totalPages <= 7) {
@@ -1051,15 +1056,17 @@ export default function TransactionsPage() {
       </div>
 
       {/* Modal Criar / Editar */}
-      <TransactionModal
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setTransactionToEdit(null);
-        }}
-        onSuccess={() => fetchTransactions(pagination.page)}
-        transactionToEdit={transactionToEdit}
-      />
+      {isModalOpen && (
+        <TransactionModal
+          isOpen={isModalOpen}
+          onClose={() => {
+            setIsModalOpen(false);
+            setTransactionToEdit(null);
+          }}
+          onSuccess={() => fetchTransactions(pagination.page)}
+          transactionToEdit={transactionToEdit}
+        />
+      )}
 
       {/* Modal de Confirmação de Encerramento de Recorrência */}
       {stopRecurrenceTx && (

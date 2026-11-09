@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { getCachedData, setCachedData, fetchWithDedupe, invalidateCache } from "@/lib/useCachedFetch";
 import {
   Tags,
   PlusCircle,
@@ -25,8 +26,12 @@ const DRE_LINES = [
 ];
 
 export default function CategoriesPage() {
-  const [tree, setTree] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [tree, setTree] = useState<any[]>(() => {
+    return getCachedData("/api/categories?includeInactive=true")?.tree || [];
+  });
+  const [loading, setLoading] = useState<boolean>(() => {
+    return !getCachedData("/api/categories?includeInactive=true");
+  });
   const [kindFilter, setKindFilter] = useState<"ALL" | "INCOME" | "EXPENSE">("ALL");
 
   // Modal de Criar / Editar
@@ -41,23 +46,40 @@ export default function CategoriesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
 
-  const fetchCategories = async () => {
+  const fetchCategories = useCallback(async (silent = false) => {
     try {
-      setLoading(true);
-      const res = await fetch("/api/categories?includeInactive=true");
-      if (!res.ok) throw new Error("Erro ao carregar categorias");
-      const json = await res.json();
+      const cacheKey = "/api/categories?includeInactive=true";
+      const cached = getCachedData(cacheKey);
+
+      if (cached?.tree) {
+        setTree(cached.tree);
+        setLoading(false);
+      } else if (!silent) {
+        setLoading(true);
+      }
+
+      const json = await fetchWithDedupe(cacheKey);
+      setCachedData(cacheKey, json);
       setTree(json.tree || []);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchCategories();
-  }, []);
+
+    const handleUpdate = () => {
+      fetchCategories(true);
+    };
+
+    window.addEventListener("snack:category-updated", handleUpdate);
+    return () => {
+      window.removeEventListener("snack:category-updated", handleUpdate);
+    };
+  }, [fetchCategories]);
 
   const handleOpenCreateParent = () => {
     setEditingCat(null);
@@ -136,7 +158,11 @@ export default function CategoriesPage() {
       if (!res.ok) throw new Error(data.error || "Erro ao salvar categoria");
 
       setIsModalOpen(false);
-      fetchCategories();
+      invalidateCache("/api/categories");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("snack:category-updated"));
+      }
+      fetchCategories(true);
     } catch (err: any) {
       setModalError(err.message);
     } finally {
@@ -156,7 +182,11 @@ export default function CategoriesPage() {
       const res = await fetch(`/api/categories/${cat.id}`, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Erro ao processar");
-      fetchCategories();
+      invalidateCache("/api/categories");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("snack:category-updated"));
+      }
+      fetchCategories(true);
     } catch (err: any) {
       alert(err.message);
     }

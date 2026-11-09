@@ -94,47 +94,69 @@ export async function GET(req: Request) {
       });
     }
 
-    const products = await prisma.product.findMany({
-      where,
-      orderBy: { name: "asc" },
-      include: {
-        category: {
-          select: { id: true, name: true },
+    // Executa em paralelo a busca de produtos e as métricas agregadas diretamente no banco
+    const [products, summaryResult] = await Promise.all([
+      prisma.product.findMany({
+        where,
+        orderBy: { name: "asc" },
+        include: {
+          category: {
+            select: { id: true, name: true },
+          },
+          supplier: {
+            select: { id: true, name: true },
+          },
+          _count: {
+            select: { stockMovements: true },
+          },
         },
-        supplier: {
-          select: { id: true, name: true },
-        },
-        _count: {
-          select: { stockMovements: true },
-        },
-      },
-    });
+      }),
+      prisma.$queryRaw<
+        {
+          totalActiveProducts: bigint | number;
+          totalStockUnits: bigint | number;
+          totalStockValue: number;
+          lowStockCount: bigint | number;
+        }[]
+      >`
+        SELECT
+          COUNT(*)::bigint AS "totalActiveProducts",
+          COALESCE(SUM("currentStock"), 0)::bigint AS "totalStockUnits",
+          COALESCE(SUM("currentStock" * "costPrice"), 0)::float AS "totalStockValue",
+          COUNT(*) FILTER (WHERE "currentStock" <= "minStock")::bigint AS "lowStockCount"
+        FROM "Product"
+        WHERE "organizationId" = ${user.organizationId} AND active = true
+      `.catch(() => null),
+    ]);
 
     // Se solicitado lowStock, filtramos onde currentStock <= minStock
     const filteredProducts = lowStock
       ? products.filter((p) => p.currentStock <= p.minStock)
       : products;
 
-    // Métricas para KPI Cards
-    const allOrgProducts = await prisma.product.findMany({
-      where: { organizationId: user.organizationId, active: true },
-      select: {
-        currentStock: true,
-        costPrice: true,
-        minStock: true,
-      },
-    });
+    let summary = {
+      totalActiveProducts: 0,
+      totalStockUnits: 0,
+      totalStockValue: 0,
+      lowStockCount: 0,
+    };
 
-    const totalActiveProducts = allOrgProducts.length;
-    let totalStockUnits = 0;
-    let totalStockValue = 0;
-    let lowStockCount = 0;
-
-    for (const p of allOrgProducts) {
-      totalStockUnits += p.currentStock;
-      totalStockValue += p.currentStock * p.costPrice;
-      if (p.currentStock <= p.minStock) {
-        lowStockCount++;
+    if (summaryResult && summaryResult[0]) {
+      summary = {
+        totalActiveProducts: Number(summaryResult[0].totalActiveProducts || 0),
+        totalStockUnits: Number(summaryResult[0].totalStockUnits || 0),
+        totalStockValue: Math.round(Number(summaryResult[0].totalStockValue || 0) * 100) / 100,
+        lowStockCount: Number(summaryResult[0].lowStockCount || 0),
+      };
+    } else {
+      // Fallback em caso de banco não suportar a query raw
+      for (const p of products) {
+        if (p.active) {
+          summary.totalActiveProducts++;
+          summary.totalStockUnits += p.currentStock;
+          summary.totalStockValue += p.currentStock * p.costPrice;
+          if (p.currentStock <= p.minStock) summary.lowStockCount++;
+        }
       }
     }
 
@@ -146,12 +168,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       products: formatted,
-      summary: {
-        totalActiveProducts,
-        totalStockUnits,
-        totalStockValue,
-        lowStockCount,
-      },
+      summary,
     });
   } catch (error) {
     console.error("Erro ao buscar produtos:", error);

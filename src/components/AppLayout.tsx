@@ -3,7 +3,12 @@
 import { useState, useEffect } from "react";
 import { Sidebar } from "./Sidebar";
 import { MobileHeader } from "./MobileHeader";
-import { TransactionModal } from "./TransactionModal";
+import dynamic from "next/dynamic";
+
+const TransactionModal = dynamic(
+  () => import("./TransactionModal").then((mod) => mod.TransactionModal),
+  { ssr: false }
+);
 
 interface AppLayoutProps {
   children: React.ReactNode;

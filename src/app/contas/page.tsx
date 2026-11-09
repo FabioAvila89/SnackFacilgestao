@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { getCachedData, setCachedData, fetchWithDedupe, invalidateCache } from "@/lib/useCachedFetch";
 import { formatCentsToBRL, parseBRLToCents } from "@/lib/formatters";
 import {
   Landmark,
@@ -16,8 +17,12 @@ import {
 } from "lucide-react";
 
 export default function AccountsPage() {
-  const [accounts, setAccounts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [accounts, setAccounts] = useState<any[]>(() => {
+    return getCachedData("/api/accounts")?.accounts || [];
+  });
+  const [loading, setLoading] = useState<boolean>(() => {
+    return !getCachedData("/api/accounts");
+  });
 
   // Modal de Criar / Editar
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -29,23 +34,42 @@ export default function AccountsPage() {
   const [modalError, setModalError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const fetchAccounts = async () => {
+  const fetchAccounts = useCallback(async (silent = false) => {
     try {
-      setLoading(true);
-      const res = await fetch("/api/accounts");
-      if (!res.ok) throw new Error("Erro ao carregar contas");
-      const json = await res.json();
+      const cacheKey = "/api/accounts";
+      const cached = getCachedData(cacheKey);
+
+      if (cached?.accounts) {
+        setAccounts(cached.accounts);
+        setLoading(false);
+      } else if (!silent) {
+        setLoading(true);
+      }
+
+      const json = await fetchWithDedupe(cacheKey);
+      setCachedData(cacheKey, json);
       setAccounts(json.accounts || []);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchAccounts();
-  }, []);
+
+    const handleUpdate = () => {
+      fetchAccounts(true);
+    };
+
+    window.addEventListener("snack:transaction-updated", handleUpdate);
+    window.addEventListener("snack:account-updated", handleUpdate);
+    return () => {
+      window.removeEventListener("snack:transaction-updated", handleUpdate);
+      window.removeEventListener("snack:account-updated", handleUpdate);
+    };
+  }, [fetchAccounts]);
 
   const handleOpenCreate = () => {
     setAccountToEdit(null);
@@ -98,7 +122,11 @@ export default function AccountsPage() {
       if (!res.ok) throw new Error(data.error || "Erro ao salvar conta");
 
       setIsModalOpen(false);
-      fetchAccounts();
+      invalidateCache("/api/accounts");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("snack:account-updated"));
+      }
+      fetchAccounts(true);
     } catch (err: any) {
       setModalError(err.message);
     } finally {
@@ -118,7 +146,11 @@ export default function AccountsPage() {
       const res = await fetch(`/api/accounts/${acc.id}`, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Erro ao processar");
-      fetchAccounts();
+      invalidateCache("/api/accounts");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("snack:account-updated"));
+      }
+      fetchAccounts(true);
     } catch (err: any) {
       alert(err.message);
     }

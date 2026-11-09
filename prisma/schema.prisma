@@ -155,20 +155,15 @@ model Transaction {
 
   stockMovement StockMovement?
 
-  @@index([date, kind, status])
-  @@index([dueDate, status])
-  @@index([accountId, date])
-  @@index([categoryId, date])
-  @@index([supplierId])
-  @@index([isRecurring])
-  @@index([installmentGroupId])
-  @@index([date])
-  @@index([categoryId])
-  @@index([accountId])
-  @@index([organizationId])
+  // Índices otimizados multi-tenant (liderados por organizationId) e sem redundâncias
+  @@index([organizationId, date, status, kind])
+  @@index([organizationId, status, dueDate])
+  @@index([organizationId, accountId, date])
+  @@index([organizationId, categoryId, date])
+  @@index([organizationId, supplierId])
+  @@index([organizationId, isRecurring])
+  @@index([organizationId, installmentGroupId])
   @@index([createdById])
-  @@index([status])
-  @@index([dueDate])
 }
 
 model AuditLog {
@@ -184,8 +179,7 @@ model AuditLog {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdAt      DateTime     @default(now())
 
-  @@index([organizationId])
-  @@index([createdAt])
+  @@index([organizationId, createdAt])
   @@index([action])
   @@index([userId])
 }
@@ -260,12 +254,10 @@ model StockMovement {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdAt      DateTime     @default(now())
 
-  @@index([organizationId])
+  @@index([organizationId, type, expirationDate])
+  @@index([organizationId, createdAt])
   @@index([productId])
-  @@index([type])
   @@index([reason])
   @@index([machineId])
   @@index([supplierId])
-  @@index([expirationDate])
-  @@index([createdAt])
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { getCachedData, setCachedData, fetchWithDedupe, invalidateCache } from "@/lib/useCachedFetch";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatPhoneBR, formatCpfCnpj } from "@/lib/formatters";
 import {
@@ -32,8 +33,12 @@ interface SupplierItem {
 }
 
 export default function SuppliersPage() {
-  const [suppliers, setSuppliers] = useState<SupplierItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [suppliers, setSuppliers] = useState<SupplierItem[]>(() => {
+    return getCachedData("/api/suppliers?")?.suppliers || [];
+  });
+  const [loading, setLoading] = useState<boolean>(() => {
+    return !getCachedData("/api/suppliers?");
+  });
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
 
@@ -52,27 +57,46 @@ export default function SuppliersPage() {
   // Usuário para permissões
   const { user: currentUser } = useAuth();
 
-  const fetchSuppliers = async () => {
+  const fetchSuppliers = useCallback(async (silent = false) => {
     try {
-      setLoading(true);
       const params = new URLSearchParams();
       if (search) params.set("search", search);
       if (statusFilter !== "ALL") params.set("status", statusFilter);
 
-      const res = await fetch(`/api/suppliers?${params.toString()}`);
-      if (!res.ok) throw new Error("Erro ao carregar fornecedores");
-      const json = await res.json();
+      const cacheKey = `/api/suppliers?${params.toString()}`;
+      const cached = getCachedData(cacheKey);
+
+      if (cached?.suppliers) {
+        setSuppliers(cached.suppliers);
+        setLoading(false);
+      } else if (!silent) {
+        setLoading(true);
+      }
+
+      const json = await fetchWithDedupe(cacheKey);
+      setCachedData(cacheKey, json);
       setSuppliers(json.suppliers || []);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [search, statusFilter]);
 
   useEffect(() => {
     fetchSuppliers();
-  }, [statusFilter]);
+  }, [fetchSuppliers]);
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      fetchSuppliers(true);
+    };
+
+    window.addEventListener("snack:supplier-updated", handleUpdate);
+    return () => {
+      window.removeEventListener("snack:supplier-updated", handleUpdate);
+    };
+  }, [fetchSuppliers]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,7 +173,11 @@ export default function SuppliersPage() {
       if (!res.ok) throw new Error(data.error || "Erro ao salvar fornecedor");
 
       setIsModalOpen(false);
-      fetchSuppliers();
+      invalidateCache("/api/suppliers");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("snack:supplier-updated"));
+      }
+      fetchSuppliers(true);
     } catch (err: any) {
       setModalError(err.message || "Erro desconhecido ao salvar");
     } finally {
@@ -169,7 +197,11 @@ export default function SuppliersPage() {
       const res = await fetch(`/api/suppliers/${sup.id}`, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Falha ao excluir");
-      fetchSuppliers();
+      invalidateCache("/api/suppliers");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("snack:supplier-updated"));
+      }
+      fetchSuppliers(true);
     } catch (err: any) {
       alert(err.message || "Erro ao processar");
     }

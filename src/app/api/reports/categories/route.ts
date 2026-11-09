@@ -94,6 +94,6 @@ export async function GET(req: Request) {
     endDate: endDate.toISOString().split("T")[0],
     totalCents,
     categories: items,
-    transactions: rawTx, // Para permitir expansão e visualização de lançamentos detalhados
+    transactions: rawTx.slice(0, 300), // Amostragem de até 300 lançamentos mais recentes para manter o payload JSON leve
   });
 }

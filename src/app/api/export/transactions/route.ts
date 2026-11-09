@@ -63,21 +63,6 @@ export async function GET(req: Request) {
     ];
   }
 
-  const transactions = await prisma.transaction.findMany({
-    where,
-    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-    include: {
-      account: true,
-      category: {
-        include: { parent: true },
-      },
-      supplier: true,
-      createdBy: {
-        select: { name: true, email: true },
-      },
-    },
-  });
-
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet("Lançamentos");
 
@@ -104,34 +89,73 @@ export async function GET(req: Request) {
     fgColor: { argb: "FFEA580C" }, // Laranja brand-600
   };
 
-  transactions.forEach((t) => {
-    const isSub = !!t.category.parentId;
-    const catName = isSub ? t.category.parent?.name || "" : t.category.name;
-    const subName = isSub ? t.category.name : "";
-    const statusLabel =
-      t.status === "PAID"
-        ? t.kind === "INCOME"
-          ? "Recebido"
-          : "Pago"
-        : t.kind === "INCOME"
-        ? "A Receber"
-        : "A Pagar";
+  // Processamento em lotes (chunks) com select estrito para evitar estouro de memória RAM (OOM)
+  const CHUNK_SIZE = 2000;
+  let skip = 0;
+  let hasMore = true;
 
-    worksheet.addRow({
-      date: formatDateToBR(t.date),
-      dueDate: t.dueDate ? formatDateToBR(t.dueDate) : "",
-      status: statusLabel,
-      kind: t.kind === "INCOME" ? "Entrada" : "Saída",
-      amount: t.amountCents / 100,
-      description: t.description,
-      supplier: t.supplier?.name || "",
-      category: catName,
-      subcategory: subName,
-      account: t.account.name,
-      createdBy: t.createdBy?.name || "Sistema",
-      notes: t.notes || "",
+  while (hasMore) {
+    const chunk = await prisma.transaction.findMany({
+      where,
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+      skip,
+      take: CHUNK_SIZE,
+      select: {
+        date: true,
+        dueDate: true,
+        status: true,
+        kind: true,
+        amountCents: true,
+        description: true,
+        notes: true,
+        account: { select: { name: true } },
+        category: {
+          select: {
+            name: true,
+            parentId: true,
+            parent: { select: { name: true } },
+          },
+        },
+        supplier: { select: { name: true } },
+        createdBy: { select: { name: true } },
+      },
     });
-  });
+
+    for (const t of chunk) {
+      const isSub = !!t.category.parentId;
+      const catName = isSub ? t.category.parent?.name || "" : t.category.name;
+      const subName = isSub ? t.category.name : "";
+      const statusLabel =
+        t.status === "PAID"
+          ? t.kind === "INCOME"
+            ? "Recebido"
+            : "Pago"
+          : t.kind === "INCOME"
+          ? "A Receber"
+          : "A Pagar";
+
+      worksheet.addRow({
+        date: formatDateToBR(t.date),
+        dueDate: t.dueDate ? formatDateToBR(t.dueDate) : "",
+        status: statusLabel,
+        kind: t.kind === "INCOME" ? "Entrada" : "Saída",
+        amount: t.amountCents / 100,
+        description: t.description,
+        supplier: t.supplier?.name || "",
+        category: catName,
+        subcategory: subName,
+        account: t.account.name,
+        createdBy: t.createdBy?.name || "Sistema",
+        notes: t.notes || "",
+      });
+    }
+
+    if (chunk.length < CHUNK_SIZE) {
+      hasMore = false;
+    } else {
+      skip += CHUNK_SIZE;
+    }
+  }
 
   // Formata coluna de valores
   worksheet.getColumn(5).numFmt = "R$ #,##0.00";
