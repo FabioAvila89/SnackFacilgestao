@@ -9,6 +9,8 @@ import {
   calculateProfitMargin,
   isStockBelowMinimum,
   isBatchExpiringSoon,
+  calculateRevertStockBalance,
+  calculateStockEditDelta,
 } from "../src/lib/inventory-engine";
 import { can } from "../src/lib/permissions";
 
@@ -227,4 +229,80 @@ describe("6. Permissões RBAC para o Módulo de Estoque e Produtos", () => {
     expect(can(viewer, "machine:write")).toBe(false);
   });
 });
+
+describe("7. Reversão e Edição de Movimentações de Estoque", () => {
+  it("Exclusão de Entrada (Compra) reverte saldo deduzindo as unidades", () => {
+    const currentStock = 50;
+    const movementQty = 20;
+
+    const reverted = calculateRevertStockBalance(currentStock, "IN", movementQty);
+    expect(reverted.newStock).toBe(30);
+  });
+
+  it("Exclusão de Entrada bloqueia se o saldo restante for ficar negativo", () => {
+    const currentStock = 10;
+    const movementQty = 20; // tentou excluir compra de 20, mas só tem 10 no depósito
+
+    expect(() => {
+      calculateRevertStockBalance(currentStock, "IN", movementQty);
+    }).toThrow("deixaria o estoque negativo");
+  });
+
+  it("Exclusão de Saída (Abastecimento ou Perda) devolve as unidades ao estoque", () => {
+    const currentStock = 15;
+    const refillQty = 25;
+
+    const reverted = calculateRevertStockBalance(currentStock, "OUT", refillQty);
+    expect(reverted.newStock).toBe(40);
+  });
+
+  it("Exclusão de Ajuste Físico restaura o saldo anterior", () => {
+    const currentStock = 60; // ajuste tinha colocado 60
+    const previousStock = 45; // antes do ajuste era 45
+
+    const reverted = calculateRevertStockBalance(currentStock, "ADJUST", 60, previousStock);
+    expect(reverted.newStock).toBe(45);
+  });
+
+  it("Edição de Entrada: aumentar quantidade adiciona a diferença ao estoque", () => {
+    const currentStock = 30;
+    const oldQty = 10;
+    const newQty = 25; // aumentou em 15
+
+    const result = calculateStockEditDelta(currentStock, "IN", oldQty, newQty);
+    expect(result.newStock).toBe(45);
+    expect(result.delta).toBe(15);
+  });
+
+  it("Edição de Entrada: diminuir quantidade reduz estoque e bloqueia se for insuficiente", () => {
+    const currentStock = 5;
+    const oldQty = 20;
+    const newQty = 10; // quer diminuir 10 da compra, mas só tem 5 em estoque
+
+    expect(() => {
+      calculateStockEditDelta(currentStock, "IN", oldQty, newQty);
+    }).toThrow("Saldo insuficiente no depósito para esta redução");
+  });
+
+  it("Edição de Saída: aumentar saída reduz estoque e bloqueia se insuficiente", () => {
+    const currentStock = 10;
+    const oldQty = 5;
+    const newQty = 20; // quer sair mais 15, mas só tem 10 disponível
+
+    expect(() => {
+      calculateStockEditDelta(currentStock, "OUT", oldQty, newQty);
+    }).toThrow("Saldo insuficiente no depósito para aumentar a saída");
+  });
+
+  it("Edição de Saída: diminuir saída devolve unidades ao estoque", () => {
+    const currentStock = 10;
+    const oldQty = 15;
+    const newQty = 5; // errou para mais, saiu só 5 ao invés de 15 -> devolve 10
+
+    const result = calculateStockEditDelta(currentStock, "OUT", oldQty, newQty);
+    expect(result.newStock).toBe(20);
+    expect(result.delta).toBe(10);
+  });
+});
+
 
