@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 import { formatCentsToBRL, formatPercent, formatDateToBR } from "@/lib/formatters";
 import {
@@ -12,31 +13,34 @@ import {
   Layers,
   ArrowRight,
 } from "lucide-react";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-} from "recharts";
 
-const COLORS = [
-  "#f97316", // orange
-  "#3b82f6", // blue
-  "#10b981", // emerald
-  "#8b5cf6", // violet
-  "#ec4899", // pink
-  "#eab308", // yellow
-  "#06b6d4", // cyan
-  "#64748b", // slate
-  "#14b8a6", // teal
-  "#f43f5e", // rose
-];
+
+
+const CategoryPieChart = dynamic(
+  () => import("@/components/charts/CategoryCharts").then((mod) => mod.CategoryPieChart),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-full flex items-center justify-center text-sm text-slate-400 animate-pulse">
+        Carregando gráfico...
+      </div>
+    ),
+  }
+);
+
+const CategoryBarChart = dynamic(
+  () => import("@/components/charts/CategoryCharts").then((mod) => mod.CategoryBarChart),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-full flex items-center justify-center text-sm text-slate-400 animate-pulse">
+        Carregando gráfico...
+      </div>
+    ),
+  }
+);
+
+
 
 export default function CategoryExpensesPage() {
   const [kind, setKind] = useState<"EXPENSE" | "INCOME">("EXPENSE");
@@ -70,23 +74,7 @@ export default function CategoryExpensesPage() {
     pct: c.percentage,
   }));
 
-  const pieTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      const p = payload[0];
-      return (
-        <div className="bg-slate-900 text-white p-3 rounded-xl shadow-xl text-xs border border-slate-700">
-          <p className="font-bold text-slate-200">{p.name}</p>
-          <p className="text-orange-400 font-semibold mt-1">
-            R$ {Number(p.value).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-          </p>
-          <p className="text-slate-400 text-[11px]">
-            {formatPercent(p.payload?.pct)} do total
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
+  
 
   return (
     <>
@@ -191,28 +179,7 @@ export default function CategoryExpensesPage() {
                   Nenhum dado para o período.
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={chartData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={55}
-                      outerRadius={85}
-                      paddingAngle={3}
-                    >
-                      {chartData.map((_: any, index: number) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={COLORS[index % COLORS.length]}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip content={pieTooltip} />
-                  </PieChart>
-                </ResponsiveContainer>
+                <CategoryPieChart data={chartData} />
               )}
             </div>
           </div>
@@ -236,36 +203,7 @@ export default function CategoryExpensesPage() {
                   Nenhum dado para o período.
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={chartData.slice(0, 7)}
-                    layout="vertical"
-                    margin={{ top: 5, right: 20, left: 20, bottom: 5 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                    <XAxis type="number" hide />
-                    <YAxis
-                      dataKey="name"
-                      type="category"
-                      width={120}
-                      tick={{ fill: "#475569", fontSize: 11 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip
-                      formatter={(val: any) => [
-                        `R$ ${Number(val).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`,
-                        "Valor",
-                      ]}
-                    />
-                    <Bar
-                      dataKey="value"
-                      fill={kind === "EXPENSE" ? "#f43f5e" : "#10b981"}
-                      radius={[0, 4, 4, 0]}
-                      maxBarSize={20}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
+                <CategoryBarChart data={chartData} kind={kind} />
               )}
             </div>
           </div>

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { formatCentsToBRL, formatPercent } from "@/lib/formatters";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 import {
@@ -14,23 +15,34 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   ShoppingBag,
+  Clock,
+  RotateCcw,
 } from "lucide-react";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from "recharts";
+
+const DashboardMonthlyChart = dynamic(
+  () =>
+    import("@/components/charts/DashboardMonthlyChart").then(
+      (mod) => mod.DashboardMonthlyChart
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-full flex items-center justify-center text-slate-400 text-sm animate-pulse">
+        Carregando gráfico...
+      </div>
+    ),
+  }
+);
 
 export default function DashboardPage() {
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   });
+
+  const now = new Date();
+  const currentMonthString = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const isCurrentMonth = selectedMonth === currentMonthString;
 
   const { data, loading } = useCachedFetch<any>(
     `/api/reports/dashboard?month=${selectedMonth}`
@@ -49,22 +61,7 @@ export default function DashboardPage() {
     Saídas: m.expenseCents / 100,
   }));
 
-  const customTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-slate-900 text-white p-3 rounded-xl shadow-xl text-xs border border-slate-700">
-          <p className="font-bold text-slate-300 mb-1">{label}</p>
-          <p className="text-emerald-400 font-semibold">
-            Entradas: R$ {Number(payload[0]?.value || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-          </p>
-          <p className="text-rose-400 font-semibold">
-            Saídas: R$ {Number(payload[1]?.value || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
+  const isResultPositive = (data?.cards?.monthResultCents || 0) >= 0;
 
   return (
     <div className="space-y-6">
@@ -80,7 +77,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Seletor de mês */}
+          {/* Seletor de mês com atalho de retorno ao mês atual */}
           <div className="flex items-center gap-2 bg-white px-3 py-2 border border-slate-200 rounded-xl shadow-sm text-sm">
             <Calendar className="w-4 h-4 text-slate-500" />
             <label htmlFor="monthPicker" className="text-xs font-semibold text-slate-500">
@@ -93,11 +90,22 @@ export default function DashboardPage() {
               onChange={(e) => setSelectedMonth(e.target.value)}
               className="font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer text-sm"
             />
+            {!isCurrentMonth && (
+              <button
+                type="button"
+                onClick={() => setSelectedMonth(currentMonthString)}
+                title="Voltar para o mês atual"
+                className="flex items-center gap-1 text-[11px] font-semibold text-orange-600 hover:text-orange-700 bg-orange-50 hover:bg-orange-100 px-2 py-0.5 rounded-lg border border-orange-200 transition-colors cursor-pointer"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>Atual</span>
+              </button>
+            )}
           </div>
 
           <button
             onClick={handleOpenNewTransaction}
-            className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white font-bold text-sm px-4 py-2.5 rounded-xl shadow-md shadow-orange-600/20 active:scale-95 transition-all cursor-pointer"
+            className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-sm px-4 py-2.5 rounded-xl shadow-md shadow-orange-500/20 active:scale-95 transition-all cursor-pointer"
           >
             <PlusCircle className="w-4 h-4" />
             <span>Novo Lançamento</span>
@@ -105,108 +113,153 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 4 Cards de Resumo */}
+      {/* 4 Cards de Resumo com Alta Hierarquia Visual */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Saldo Total Atual */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Saldo em Caixa
-            </span>
-            <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600">
+        {/* Card 1: Saldo Total Atual (Hero Card) */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-sm relative overflow-hidden flex flex-col justify-between hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Saldo em Caixa
+              </span>
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                Geral
+              </span>
+            </div>
+            <div className="w-9 h-9 rounded-xl bg-slate-900 text-orange-400 flex items-center justify-center shadow-sm">
               <Scale className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-black text-slate-900">
-            {loading && !data ? (
-              <span className="inline-block w-28 h-7 bg-slate-100 animate-pulse rounded" />
-            ) : (
-              formatCentsToBRL(data?.cards?.totalBalanceCents || 0)
-            )}
+          <div>
+            <div className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+              {loading && !data ? (
+                <span className="inline-block w-28 h-8 bg-slate-100 animate-pulse rounded-lg" />
+              ) : (
+                formatCentsToBRL(data?.cards?.totalBalanceCents || 0)
+              )}
+            </div>
+            <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+              Saldo acumulado de todas as contas
+            </p>
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">
-            Saldo acumulado de todas as contas
-          </p>
         </div>
 
         {/* Card 2: Entradas do Mês */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-emerald-600">
-              Entradas no Mês
-            </span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-sm relative overflow-hidden flex flex-col justify-between hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Entradas
+              </span>
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                Recebido
+              </span>
+            </div>
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
               <TrendingUp className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-black text-emerald-600">
-            {loading && !data ? (
-              <span className="inline-block w-28 h-7 bg-slate-100 animate-pulse rounded" />
+          <div>
+            <div className="text-2xl sm:text-3xl font-black text-emerald-600 tracking-tight">
+              {loading && !data ? (
+                <span className="inline-block w-28 h-8 bg-slate-100 animate-pulse rounded-lg" />
+              ) : (
+                formatCentsToBRL(data?.cards?.monthIncomeCents || 0)
+              )}
+            </div>
+            {data?.cards?.monthPendingIncomeCents > 0 ? (
+              <Link
+                href="/lancamentos"
+                title="Ver lançamentos a receber"
+                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 transition-colors mt-2"
+              >
+                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                <span>+ {formatCentsToBRL(data.cards.monthPendingIncomeCents)} a receber</span>
+              </Link>
             ) : (
-              formatCentsToBRL(data?.cards?.monthIncomeCents || 0)
+              <p className="text-xs text-slate-400 mt-1.5">Nenhuma entrada pendente</p>
             )}
           </div>
-          {data?.cards?.monthPendingIncomeCents > 0 && (
-            <p className="text-[11px] text-amber-600 mt-1 font-medium flex items-center gap-1">
-              <span>+ {formatCentsToBRL(data.cards.monthPendingIncomeCents)} a receber</span>
-            </p>
-          )}
         </div>
 
         {/* Card 3: Saídas do Mês */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-rose-600">
-              Saídas no Mês
-            </span>
-            <div className="w-8 h-8 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-sm relative overflow-hidden flex flex-col justify-between hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Saídas
+              </span>
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+                Pago
+              </span>
+            </div>
+            <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
               <TrendingDown className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-black text-rose-600">
-            {loading && !data ? (
-              <span className="inline-block w-28 h-7 bg-slate-100 animate-pulse rounded" />
+          <div>
+            <div className="text-2xl sm:text-3xl font-black text-rose-600 tracking-tight">
+              {loading && !data ? (
+                <span className="inline-block w-28 h-8 bg-slate-100 animate-pulse rounded-lg" />
+              ) : (
+                formatCentsToBRL(data?.cards?.monthExpenseCents || 0)
+              )}
+            </div>
+            {data?.cards?.monthPendingExpenseCents > 0 ? (
+              <Link
+                href="/lancamentos"
+                title="Ver contas a pagar pendentes"
+                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 transition-colors mt-2"
+              >
+                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                <span>+ {formatCentsToBRL(data.cards.monthPendingExpenseCents)} a pagar</span>
+              </Link>
             ) : (
-              formatCentsToBRL(data?.cards?.monthExpenseCents || 0)
+              <p className="text-xs text-slate-400 mt-1.5">Nenhuma saída pendente</p>
             )}
           </div>
-          {data?.cards?.monthPendingExpenseCents > 0 && (
-            <p className="text-[11px] text-amber-600 mt-1 font-medium flex items-center gap-1">
-              <span>+ {formatCentsToBRL(data.cards.monthPendingExpenseCents)} a pagar</span>
-            </p>
-          )}
         </div>
 
         {/* Card 4: Resultado do Mês */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Resultado Líquido
-            </span>
-            <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
-              (data?.cards?.monthResultCents || 0) >= 0
-                ? "bg-emerald-50 text-emerald-600"
-                : "bg-rose-50 text-rose-600"
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-sm relative overflow-hidden flex flex-col justify-between hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Resultado
+              </span>
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
+                isResultPositive
+                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                  : "bg-rose-50 text-rose-700 border border-rose-200"
+              }`}>
+                {isResultPositive ? "Superávit" : "Déficit"}
+              </span>
+            </div>
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+              isResultPositive ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"
             }`}>
-              {(data?.cards?.monthResultCents || 0) >= 0 ? (
+              {isResultPositive ? (
                 <ArrowUpRight className="w-4 h-4" />
               ) : (
                 <ArrowDownRight className="w-4 h-4" />
               )}
             </div>
           </div>
-          <div className={`text-2xl font-black ${
-            (data?.cards?.monthResultCents || 0) >= 0 ? "text-emerald-600" : "text-rose-600"
-          }`}>
-            {loading && !data ? (
-              <span className="inline-block w-28 h-7 bg-slate-100 animate-pulse rounded" />
-            ) : (
-              formatCentsToBRL(data?.cards?.monthResultCents || 0)
-            )}
+          <div>
+            <div className={`text-2xl sm:text-3xl font-black tracking-tight ${
+              isResultPositive ? "text-emerald-600" : "text-rose-600"
+            }`}>
+              {loading && !data ? (
+                <span className="inline-block w-28 h-8 bg-slate-100 animate-pulse rounded-lg" />
+              ) : (
+                formatCentsToBRL(data?.cards?.monthResultCents || 0)
+              )}
+            </div>
+            <p className="text-xs text-slate-500 mt-1.5">
+              Diferença (Entradas - Saídas pagas)
+            </p>
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">
-            Diferença (Entradas - Saídas pagas)
-          </p>
         </div>
       </div>
 
@@ -235,34 +288,7 @@ export default function DashboardPage() {
                 Nenhum dado financeiro para o período.
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis
-                    dataKey="name"
-                    stroke="#94a3b8"
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <YAxis
-                    stroke="#94a3b8"
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(val) => `R$${val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val}`}
-                  />
-                  <Tooltip content={customTooltip} />
-                  <Legend
-                    verticalAlign="top"
-                    align="right"
-                    iconType="circle"
-                    wrapperStyle={{ paddingBottom: 15, fontSize: 12 }}
-                  />
-                  <Bar dataKey="Entradas" fill="#10b981" radius={[4, 4, 0, 0]} barSize={14} />
-                  <Bar dataKey="Saídas" fill="#f43f5e" radius={[4, 4, 0, 0]} barSize={14} />
-                </BarChart>
-              </ResponsiveContainer>
+              <DashboardMonthlyChart data={chartData} />
             )}
           </div>
         </div>

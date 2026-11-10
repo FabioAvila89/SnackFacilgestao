@@ -295,13 +295,16 @@ function addTransactionToLineAcc(
   }
 
   catGroup.amountCents += amt;
-  catGroup.items.push({
-    id: t.id,
-    description: t.description,
-    date: dateFormatted,
-    amountCents: amt,
-    accountName: t.accountName || "Conta",
-  });
+  // Limita até 50 lançamentos representativos por categoria para manter o DRE ágil em períodos anuais
+  if (catGroup.items.length < 50) {
+    catGroup.items.push({
+      id: t.id,
+      description: t.description,
+      date: dateFormatted,
+      amountCents: amt,
+      accountName: t.accountName || "Conta",
+    });
+  }
 }
 
 /**

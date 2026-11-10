@@ -56,7 +56,12 @@ export async function GET(req: Request) {
   if (machineId) where.machineId = machineId;
 
   try {
-    const [movements, totalCount] = await Promise.all([
+    const now = new Date();
+    const in30Days = new Date();
+    in30Days.setDate(in30Days.getDate() + 30);
+
+    // Executa listagem, contagem e lotes a vencer simultaneamente em paralelo
+    const [movements, totalCount, expiringBatches] = await Promise.all([
       prisma.stockMovement.findMany({
         where,
         orderBy: { createdAt: "desc" },
@@ -81,28 +86,25 @@ export async function GET(req: Request) {
         },
       }),
       prisma.stockMovement.count({ where }),
+      // Busca lotes a vencer apenas na primeira página (evita re-consultar a cada clique de paginação)
+      page === 1
+        ? prisma.stockMovement.findMany({
+            where: {
+              organizationId: user.organizationId,
+              type: "IN",
+              expirationDate: {
+                gte: now,
+                lte: in30Days,
+              },
+            },
+            orderBy: { expirationDate: "asc" },
+            take: 10,
+            include: {
+              product: { select: { id: true, name: true, sku: true, currentStock: true } },
+            },
+          })
+        : Promise.resolve([]),
     ]);
-
-    // Resumo de lotes com vencimento nos próximos 30 dias
-    const now = new Date();
-    const in30Days = new Date();
-    in30Days.setDate(in30Days.getDate() + 30);
-
-    const expiringBatches = await prisma.stockMovement.findMany({
-      where: {
-        organizationId: user.organizationId,
-        type: "IN",
-        expirationDate: {
-          not: null,
-          lte: in30Days,
-        },
-      },
-      orderBy: { expirationDate: "asc" },
-      take: 10,
-      include: {
-        product: { select: { id: true, name: true, sku: true, currentStock: true } },
-      },
-    });
 
     return NextResponse.json({
       movements,

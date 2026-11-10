@@ -28,47 +28,59 @@ interface MobileHeaderProps {
   onOpenNewTransaction: () => void;
 }
 
-interface UserInfo {
-  id: string;
-  name: string;
-  email: string;
-  role: "ADMIN" | "EDITOR" | "VIEWER";
+interface NavItem {
+  href: string;
+  label: string;
+  icon: any;
 }
 
-const baseNavItems = [
-  { href: "/", label: "Início (Dashboard)", icon: LayoutDashboard },
-  { href: "/lancamentos", label: "Lançamentos", icon: Receipt },
-  { href: "/produtos", label: "Produtos", icon: Package },
-  { href: "/estoque", label: "Estoque", icon: Boxes },
-  { href: "/relatorios/fluxo", label: "Entradas × Saídas", icon: ArrowUpDown },
-  { href: "/relatorios/categorias", label: "Gastos por Categoria", icon: PieChart },
-  { href: "/relatorios/dre", label: "DRE", icon: FileSpreadsheet },
-  { href: "/contas", label: "Contas", icon: Landmark },
-  { href: "/fornecedores", label: "Fornecedores", icon: Truck },
-  { href: "/categorias", label: "Categorias", icon: Tags },
-  { href: "/importar-exportar", label: "Importar / Exportar", icon: FileUp },
-];
+interface NavSection {
+  title: string;
+  items: NavItem[];
+}
 
 export function MobileHeader({ onOpenNewTransaction }: MobileHeaderProps) {
   const [isOpen, setIsOpen] = useState(false);
   const { user: currentUser, loading, logout: handleLogout } = useAuth();
   const pathname = usePathname();
 
-  const navItems = [...baseNavItems];
-
-  if (currentUser?.role === "ADMIN") {
-    navItems.push({
-      href: "/gestao-acesso",
-      label: "Gestão de Acesso",
-      icon: Users,
-    });
-  }
-
-  navItems.push({
-    href: "/minha-conta",
-    label: "Minha Conta",
-    icon: UserCircle,
-  });
+  const navSections: NavSection[] = [
+    {
+      title: "Operação",
+      items: [
+        { href: "/", label: "Início (Dashboard)", icon: LayoutDashboard },
+        { href: "/lancamentos", label: "Lançamentos", icon: Receipt },
+        { href: "/produtos", label: "Produtos", icon: Package },
+        { href: "/estoque", label: "Estoque", icon: Boxes },
+      ],
+    },
+    {
+      title: "Relatórios & DRE",
+      items: [
+        { href: "/relatorios/fluxo", label: "Entradas × Saídas", icon: ArrowUpDown },
+        { href: "/relatorios/categorias", label: "Gastos por Categoria", icon: PieChart },
+        { href: "/relatorios/dre", label: "DRE", icon: FileSpreadsheet },
+      ],
+    },
+    {
+      title: "Cadastros",
+      items: [
+        { href: "/contas", label: "Contas", icon: Landmark },
+        { href: "/fornecedores", label: "Fornecedores", icon: Truck },
+        { href: "/categorias", label: "Categorias", icon: Tags },
+      ],
+    },
+    {
+      title: "Sistema",
+      items: [
+        { href: "/importar-exportar", label: "Importar / Exportar", icon: FileUp },
+        ...(currentUser?.role === "ADMIN"
+          ? [{ href: "/gestao-acesso", label: "Gestão de Acesso", icon: Users }]
+          : []),
+        { href: "/minha-conta", label: "Minha Conta", icon: UserCircle },
+      ],
+    },
+  ];
 
   return (
     <>
@@ -129,27 +141,34 @@ export function MobileHeader({ onOpenNewTransaction }: MobileHeaderProps) {
               </button>
             </div>
 
-            <nav className="flex-1 py-4 space-y-1.5 overflow-y-auto">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = pathname === item.href;
+            <nav className="flex-1 py-3 space-y-4 overflow-y-auto">
+              {navSections.map((section) => (
+                <div key={section.title} className="space-y-1">
+                  <div className="px-3 pt-1 text-[10px] font-bold tracking-wider text-slate-500 uppercase">
+                    {section.title}
+                  </div>
+                  {section.items.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = pathname === item.href;
 
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setIsOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-sm ${
-                      isActive
-                        ? "bg-orange-500 text-white font-semibold"
-                        : "text-slate-300 hover:bg-slate-800"
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                    <span>{item.label}</span>
-                  </Link>
-                );
-              })}
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setIsOpen(false)}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-xl font-medium text-sm ${
+                          isActive
+                            ? "bg-orange-500 text-white font-semibold"
+                            : "text-slate-300 hover:bg-slate-800"
+                        }`}
+                      >
+                        <Icon className="w-4 h-4" />
+                        <span>{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              ))}
             </nav>
 
             <div className="pt-4 border-t border-slate-800">

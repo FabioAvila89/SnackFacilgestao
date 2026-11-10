@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { getCachedData, setCachedData, fetchWithDedupe, invalidateCache } from "@/lib/useCachedFetch";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDateToBR } from "@/lib/formatters";
 import {
@@ -55,8 +56,12 @@ export default function GestaoAcessoPage() {
   const [activeTab, setActiveTab] = useState<"users" | "audit">("users");
 
   // Usuários
-  const [users, setUsers] = useState<UserItem[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [users, setUsers] = useState<UserItem[]>(() => {
+    return getCachedData("/api/users?")?.users || [];
+  });
+  const [loadingUsers, setLoadingUsers] = useState<boolean>(() => {
+    return !getCachedData("/api/users?");
+  });
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const { user: currentUser } = useAuth();
@@ -113,30 +118,47 @@ export default function GestaoAcessoPage() {
   const [auditStartDate, setAuditStartDate] = useState("");
   const [auditEndDate, setAuditEndDate] = useState("");
 
-  // Carrega Usuários
-  const fetchUsers = async () => {
+  // Carrega Usuários com cache instantâneo e deduplicação
+  const fetchUsers = useCallback(async (silent = false) => {
     try {
-      setLoadingUsers(true);
       const params = new URLSearchParams();
       if (search) params.set("search", search);
       if (statusFilter !== "ALL") params.set("status", statusFilter);
 
-      const resUsers = await fetch(`/api/users?${params.toString()}`);
+      const cacheKey = `/api/users?${params.toString()}`;
+      const cached = getCachedData(cacheKey);
 
-      if (resUsers.ok) {
-        const data = await resUsers.json();
-        setUsers(data.users || []);
+      if (cached?.users) {
+        setUsers(cached.users);
+        setLoadingUsers(false);
+      } else if (!silent) {
+        setLoadingUsers(true);
       }
+
+      const data = await fetchWithDedupe(cacheKey);
+      setCachedData(cacheKey, data);
+      setUsers(data.users || []);
     } catch (err) {
       console.error("Erro ao carregar usuários:", err);
     } finally {
       setLoadingUsers(false);
     }
-  };
+  }, [search, statusFilter]);
 
   useEffect(() => {
     fetchUsers();
-  }, [statusFilter]);
+  }, [fetchUsers]);
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      fetchUsers(true);
+    };
+
+    window.addEventListener("snack:user-updated", handleUpdate);
+    return () => {
+      window.removeEventListener("snack:user-updated", handleUpdate);
+    };
+  }, [fetchUsers]);
 
   // Carrega Auditoria
   const fetchAuditLogs = async (page = auditPage) => {

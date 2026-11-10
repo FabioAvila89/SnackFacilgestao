@@ -230,10 +230,21 @@ export async function POST(req: Request) {
       installments,
     } = parsed.data;
 
-    // 1. Valida conta
-    const account = await prisma.account.findFirst({
-      where: { id: accountId, organizationId: user.organizationId },
-    });
+    // Validação paralela em lote (reduz 3 round-trips de rede sequenciais para apenas 1)
+    const [account, category, supplier] = await Promise.all([
+      prisma.account.findFirst({
+        where: { id: accountId, organizationId: user.organizationId },
+      }),
+      prisma.category.findFirst({
+        where: { id: categoryId, organizationId: user.organizationId },
+      }),
+      supplierId
+        ? prisma.supplier.findFirst({
+            where: { id: supplierId, organizationId: user.organizationId },
+          })
+        : Promise.resolve(null),
+    ]);
+
     if (!account) {
       return NextResponse.json({ error: "Conta não encontrada." }, { status: 400 });
     }
@@ -241,10 +252,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "A conta selecionada está desativada." }, { status: 400 });
     }
 
-    // 2. Valida categoria
-    const category = await prisma.category.findFirst({
-      where: { id: categoryId, organizationId: user.organizationId },
-    });
     if (!category) {
       return NextResponse.json({ error: "Categoria não encontrada." }, { status: 400 });
     }
@@ -252,7 +259,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "A categoria selecionada está desativada." }, { status: 400 });
     }
 
-    // 3. Regra crítica: kind da transação deve bater com kind da categoria
     if (category.kind !== kind) {
       const catTipo = category.kind === "INCOME" ? "entrada" : "saída";
       const txTipo = kind === "INCOME" ? "entrada" : "saída";
@@ -264,14 +270,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // 4. Valida fornecedor (se fornecido)
-    if (supplierId) {
-      const sup = await prisma.supplier.findFirst({
-        where: { id: supplierId, organizationId: user.organizationId },
-      });
-      if (!sup) {
-        return NextResponse.json({ error: "Fornecedor não encontrado." }, { status: 400 });
-      }
+    if (supplierId && !supplier) {
+      return NextResponse.json({ error: "Fornecedor não encontrado." }, { status: 400 });
     }
 
     // Converte data base

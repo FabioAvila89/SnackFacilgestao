@@ -100,15 +100,31 @@ interface StockMovementItem {
 export default function StockControlPage() {
   const { user: currentUser } = useAuth();
 
-  const [movements, setMovements] = useState<StockMovementItem[]>([]);
-  const [expiringBatches, setExpiringBatches] = useState<any[]>([]);
-  const [products, setProducts] = useState<ProductOption[]>([]);
-  const [machines, setMachines] = useState<MachineOption[]>([]);
-  const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
-  const [accounts, setAccounts] = useState<AccountOption[]>([]);
-  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [movements, setMovements] = useState<StockMovementItem[]>(() => {
+    return getCachedData("/api/stock-movements?")?.movements || [];
+  });
+  const [expiringBatches, setExpiringBatches] = useState<any[]>(() => {
+    return getCachedData("/api/stock-movements?")?.expiringBatches || [];
+  });
+  const [products, setProducts] = useState<ProductOption[]>(() => {
+    return getCachedData("/api/products?status=ACTIVE&minimal=true")?.products || [];
+  });
+  const [machines, setMachines] = useState<MachineOption[]>(() => {
+    return getCachedData("/api/machines")?.machines || [];
+  });
+  const [suppliers, setSuppliers] = useState<SupplierOption[]>(() => {
+    return getCachedData("/api/suppliers?status=ACTIVE")?.suppliers || [];
+  });
+  const [accounts, setAccounts] = useState<AccountOption[]>(() => {
+    return getCachedData("/api/accounts")?.accounts || [];
+  });
+  const [categories, setCategories] = useState<CategoryOption[]>(() => {
+    return getCachedData("/api/categories")?.categories || [];
+  });
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(() => {
+    return !getCachedData("/api/stock-movements?");
+  });
   const [activeTab, setActiveTab] = useState<"kardex" | "low_stock" | "expiring">("kardex");
 
   // Filtros Kardex
@@ -150,23 +166,40 @@ export default function StockControlPage() {
   const [modalError, setModalError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // 1. Carregamento inicial ultrarrápido: apenas produtos (modo minimal) e máquinas para os filtros
-  const loadInitialFilters = useCallback(async () => {
+  // 1. Carregamento inicial ultrarrápido com cache: produtos (modo minimal) e máquinas para os filtros
+  const loadInitialFilters = useCallback(async (silent = false) => {
     try {
-      const [prodRes, machRes] = await Promise.all([
-        fetch("/api/products?status=ACTIVE&minimal=true"),
-        fetch("/api/machines"),
+      const prodKey = "/api/products?status=ACTIVE&minimal=true";
+      const machKey = "/api/machines";
+
+      const cachedProd = getCachedData(prodKey);
+      const cachedMach = getCachedData(machKey);
+
+      if (cachedProd?.products) {
+        setProducts(cachedProd.products);
+      }
+      if (cachedMach?.machines) {
+        const machList = cachedMach.machines || [];
+        setMachines(machList);
+        if (machList.length > 0 && !selectedMachineId) {
+          const defaultMach = machList.find((x: any) => x.name.toLowerCase().includes("01")) || machList[0];
+          setSelectedMachineId(defaultMach.id);
+        }
+      }
+
+      const [p, m] = await Promise.all([
+        fetchWithDedupe(prodKey),
+        fetchWithDedupe(machKey),
       ]);
 
-      if (prodRes.ok) {
-        const p = await prodRes.json();
-        setProducts(p.products || []);
+      if (p?.products) {
+        setCachedData(prodKey, p);
+        setProducts(p.products);
       }
-      if (machRes.ok) {
-        const m = await machRes.json();
+      if (m?.machines) {
+        setCachedData(machKey, m);
         const machList = m.machines || [];
         setMachines(machList);
-        // Pré-seleciona a primeira máquina ou Máquina 01 para formulário
         if (machList.length > 0 && !selectedMachineId) {
           const defaultMach = machList.find((x: any) => x.name.toLowerCase().includes("01")) || machList[0];
           setSelectedMachineId(defaultMach.id);
@@ -177,31 +210,69 @@ export default function StockControlPage() {
     }
   }, [selectedMachineId]);
 
-  // 2. Carregamento sob demanda (lazy): fornecedores, contas e categorias carregam somente quando o modal abrir
+  // 2. Carregamento sob demanda (lazy) com cache: fornecedores, contas e categorias
   const loadModalData = useCallback(async () => {
-    if (modalDataLoaded || loadingModalData) return;
+    if (loadingModalData) return;
     try {
       setLoadingModalData(true);
-      const [supRes, accRes, catRes] = await Promise.all([
-        fetch("/api/suppliers?status=ACTIVE"),
-        fetch("/api/accounts"),
-        fetch("/api/categories"),
+      const supKey = "/api/suppliers?status=ACTIVE";
+      const accKey = "/api/accounts";
+      const catKey = "/api/categories";
+
+      // Render instantâneo caso já esteja em cache
+      const cachedSup = getCachedData(supKey);
+      const cachedAcc = getCachedData(accKey);
+      const cachedCat = getCachedData(catKey);
+
+      if (cachedSup?.suppliers) {
+        setSuppliers(cachedSup.suppliers);
+      }
+      if (cachedAcc?.accounts) {
+        const activeAccs = (cachedAcc.accounts || []).filter((x: any) => x.active);
+        setAccounts(activeAccs);
+        if (activeAccs.length > 0 && !financialAccountId) {
+          setFinancialAccountId(activeAccs[0].id);
+        }
+      }
+      if (cachedCat?.categories) {
+        const expenseCategories: CategoryOption[] = [];
+        (cachedCat.categories || []).forEach((cat: any) => {
+          if (cat.kind === "EXPENSE") {
+            expenseCategories.push({ id: cat.id, name: cat.name, kind: cat.kind });
+            if (cat.subcategories) {
+              cat.subcategories.forEach((sub: any) => {
+                expenseCategories.push({ id: sub.id, name: `${cat.name} > ${sub.name}`, kind: sub.kind || "EXPENSE" });
+              });
+            }
+          }
+        });
+        setCategories(expenseCategories);
+        if (expenseCategories.length > 0 && !financialCategoryId) {
+          const defaultCat = expenseCategories.find((cat) => cat.name.toLowerCase().includes("revenda") || cat.name.toLowerCase().includes("snack")) || expenseCategories[0];
+          setFinancialCategoryId(defaultCat.id);
+        }
+      }
+
+      const [s, a, c] = await Promise.all([
+        fetchWithDedupe(supKey),
+        fetchWithDedupe(accKey),
+        fetchWithDedupe(catKey),
       ]);
 
-      if (supRes.ok) {
-        const s = await supRes.json();
-        setSuppliers(s.suppliers || []);
+      if (s?.suppliers) {
+        setCachedData(supKey, s);
+        setSuppliers(s.suppliers);
       }
-      if (accRes.ok) {
-        const a = await accRes.json();
+      if (a?.accounts) {
+        setCachedData(accKey, a);
         const activeAccs = (a.accounts || []).filter((x: any) => x.active);
         setAccounts(activeAccs);
         if (activeAccs.length > 0 && !financialAccountId) {
           setFinancialAccountId(activeAccs[0].id);
         }
       }
-      if (catRes.ok) {
-        const c = await catRes.json();
+      if (c?.categories) {
+        setCachedData(catKey, c);
         const expenseCategories: CategoryOption[] = [];
         (c.categories || []).forEach((cat: any) => {
           if (cat.kind === "EXPENSE") {
@@ -225,19 +296,28 @@ export default function StockControlPage() {
     } finally {
       setLoadingModalData(false);
     }
-  }, [modalDataLoaded, loadingModalData, financialAccountId, financialCategoryId]);
+  }, [loadingModalData, financialAccountId, financialCategoryId]);
 
-  const fetchMovements = useCallback(async () => {
+  const fetchMovements = useCallback(async (silent = false) => {
     try {
-      setLoading(true);
       const params = new URLSearchParams();
       if (filterProductId) params.set("productId", filterProductId);
       if (filterReason) params.set("reason", filterReason);
       if (filterMachineId) params.set("machineId", filterMachineId);
 
-      const res = await fetch(`/api/stock-movements?${params.toString()}`);
-      if (!res.ok) throw new Error("Erro ao buscar histórico de movimentações");
-      const data = await res.json();
+      const cacheKey = `/api/stock-movements?${params.toString()}`;
+      const cached = getCachedData(cacheKey);
+
+      if (cached) {
+        setMovements(cached.movements || []);
+        setExpiringBatches(cached.expiringBatches || []);
+        setLoading(false);
+      } else if (!silent) {
+        setLoading(true);
+      }
+
+      const data = await fetchWithDedupe(cacheKey);
+      setCachedData(cacheKey, data);
       setMovements(data.movements || []);
       setExpiringBatches(data.expiringBatches || []);
     } catch (e) {
@@ -247,7 +327,7 @@ export default function StockControlPage() {
     }
   }, [filterProductId, filterReason, filterMachineId]);
 
-  // Carrega opções de filtro apenas uma vez na montagem
+  // Carrega opções de filtro na montagem
   useEffect(() => {
     loadInitialFilters();
   }, [loadInitialFilters]);
@@ -256,6 +336,19 @@ export default function StockControlPage() {
   useEffect(() => {
     fetchMovements();
   }, [fetchMovements]);
+
+  // Sincronização automática quando estoque for alterado em outros menus ou abas
+  useEffect(() => {
+    const handleStockUpdated = () => {
+      fetchMovements(true);
+      loadInitialFilters(true);
+    };
+
+    window.addEventListener("snack:stock-updated", handleStockUpdated);
+    return () => {
+      window.removeEventListener("snack:stock-updated", handleStockUpdated);
+    };
+  }, [fetchMovements, loadInitialFilters]);
 
   // Carrega dados do modal sob demanda apenas quando ele for aberto
   useEffect(() => {
@@ -336,7 +429,8 @@ export default function StockControlPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Erro ao criar máquina");
 
-      // Adiciona na lista e seleciona
+      // Invalida cache de máquinas
+      invalidateCache("/api/machines");
       setMachines((prev) => [...prev, data.machine]);
       setSelectedMachineId(data.machine.id);
       setIsNewMachineModalOpen(false);
@@ -439,9 +533,20 @@ export default function StockControlPage() {
       }
 
       setIsModalOpen(false);
+
+      // Invalida caches pertinentes e notifica o ecossistema do app
+      invalidateCache((key) => key.includes("/api/stock-movements") || key.includes("/api/products"));
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("snack:stock-updated"));
+        if (payload.createFinancialTransaction) {
+          invalidateCache((key) => key.includes("/api/transactions") || key.includes("/api/reports") || key.includes("/api/accounts"));
+          window.dispatchEvent(new CustomEvent("snack:transaction-updated"));
+        }
+      }
+
       // Atualiza movimentações e lista de produtos para refletir novo saldo
-      fetchMovements();
-      loadInitialFilters();
+      fetchMovements(true);
+      loadInitialFilters(true);
     } catch (err: any) {
       setModalError(err.message || "Erro inesperado.");
     } finally {

@@ -93,6 +93,32 @@ if (typeof window !== "undefined") {
       key.includes("/api/products")
     );
   });
+
+  window.addEventListener("snack:account-updated", () => {
+    invalidateCache((key) =>
+      key.includes("/api/accounts") ||
+      key.includes("/api/reports")
+    );
+  });
+
+  window.addEventListener("snack:category-updated", () => {
+    invalidateCache((key) =>
+      key.includes("/api/categories") ||
+      key.includes("/api/reports")
+    );
+  });
+
+  window.addEventListener("snack:supplier-updated", () => {
+    invalidateCache((key) =>
+      key.includes("/api/suppliers")
+    );
+  });
+
+  window.addEventListener("snack:user-updated", () => {
+    invalidateCache((key) =>
+      key.includes("/api/users")
+    );
+  });
 }
 
 /**

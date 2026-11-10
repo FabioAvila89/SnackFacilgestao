@@ -78,6 +78,7 @@ export async function GET(req: Request) {
   const allTx = await prisma.transaction.findMany({
     where: {
       organizationId: user.organizationId,
+      status: "PAID",
       date: { gte: prevStart, lte: curEnd },
     },
     include: {

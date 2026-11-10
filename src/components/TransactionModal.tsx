@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Check, AlertCircle, Calendar, Repeat, Layers, CheckCircle2 } from "lucide-react";
+import { X, Check, AlertCircle, Calendar, Repeat, Layers, CheckCircle2, ChevronDown, SlidersHorizontal } from "lucide-react";
 import { formatDateToInput, parseBRLToCents, formatCentsToBRL } from "@/lib/formatters";
 import { desdobrarParcelas, determinarStatusPorVencimento } from "@/lib/installments";
 
@@ -95,6 +95,25 @@ export function TransactionModal({
   const [isInstallment, setIsInstallment] = useState(false);
   const [numInstallments, setNumInstallments] = useState(2);
   const [installmentRows, setInstallmentRows] = useState<InstallmentRow[]>([]);
+
+  // Controle do Acordeão de Opções Avançadas
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(() => {
+    return Boolean(
+      transactionToEdit?.isRecurring ||
+      transactionToEdit?.isInstallment ||
+      transactionToEdit?.supplierId ||
+      transactionToEdit?.notes
+    );
+  });
+
+  // Atualiza estado se abrir para edição
+  useEffect(() => {
+    if (isOpen) {
+      if (transactionToEdit?.isRecurring || transactionToEdit?.isInstallment || transactionToEdit?.supplierId || transactionToEdit?.notes) {
+        setShowAdvancedOptions(true);
+      }
+    }
+  }, [isOpen, transactionToEdit]);
 
   // Listas auxiliares
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -502,6 +521,7 @@ export function TransactionModal({
                 type="text"
                 inputMode="decimal"
                 required
+                autoFocus={!isEditing}
                 placeholder="0,00"
                 value={amountStr}
                 onChange={(e) => setAmountStr(e.target.value)}
@@ -555,7 +575,22 @@ export function TransactionModal({
             </div>
           </div>
 
-          {/* Conta e Fornecedor */}
+          {/* Descrição */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+              Descrição *
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="Ex: Venda máquina academia, Reposição salgadinhos..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="block w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white"
+            />
+          </div>
+
+          {/* Conta e Categoria Principal */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
@@ -578,42 +613,6 @@ export function TransactionModal({
 
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                Fornecedor (Opcional)
-              </label>
-              <select
-                value={supplierId}
-                onChange={(e) => setSupplierId(e.target.value)}
-                className="block w-full px-3 py-2.5 text-sm font-medium border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white"
-              >
-                <option value="">Nenhum (ou selecione...)</option>
-                {suppliers.map((sup) => (
-                  <option key={sup.id} value={sup.id}>
-                    {sup.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Descrição */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
-              Descrição *
-            </label>
-            <input
-              type="text"
-              required
-              placeholder="Ex: Venda máquina academia, Reposição salgadinhos..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="block w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white"
-            />
-          </div>
-
-          {/* Categoria e Subcategoria */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
                 Categoria *
               </label>
               <select
@@ -630,7 +629,10 @@ export function TransactionModal({
                 ))}
               </select>
             </div>
+          </div>
 
+          {/* Subcategoria (se houver subcategorias na categoria selecionada) */}
+          {selectedParentCatId && availableSubcategories.length > 0 && (
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
                 Subcategoria (opcional)
@@ -638,14 +640,9 @@ export function TransactionModal({
               <select
                 value={selectedSubCatId}
                 onChange={(e) => setSelectedSubCatId(e.target.value)}
-                disabled={!selectedParentCatId || availableSubcategories.length === 0}
-                className="block w-full px-3 py-2.5 text-sm font-medium border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white disabled:bg-slate-100 disabled:text-slate-400"
+                className="block w-full px-3 py-2.5 text-sm font-medium border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white"
               >
-                <option value="">
-                  {availableSubcategories.length === 0
-                    ? "(Sem subcategorias)"
-                    : "Geral (ou selecione...)"}
-                </option>
+                <option value="">Geral (ou selecione a subcategoria...)</option>
                 {availableSubcategories.map((sub: any) => (
                   <option key={sub.id} value={sub.id}>
                     {sub.name}
@@ -653,21 +650,7 @@ export function TransactionModal({
                 ))}
               </select>
             </div>
-          </div>
-
-          {/* Observações */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
-              Observações (opcional)
-            </label>
-            <input
-              type="text"
-              placeholder="Ex: NF 1234, Pago via Pix pelo sócio..."
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="block w-full px-3.5 py-2 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white"
-            />
-          </div>
+          )}
 
           {/* Informação se a transação em edição for parte de parcelamento */}
           {isEditing && transactionToEdit?.isInstallment && (
@@ -679,11 +662,63 @@ export function TransactionModal({
             </div>
           )}
 
-          {/* Recorrência e Parcelamento */}
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/80 space-y-3">
-            <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              {isEditing ? "Recorrência" : "Opções Avançadas"}
-            </div>
+          {/* Botão Acordeão de Opções Avançadas */}
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+              className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-slate-100/90 border border-slate-200/80 text-xs font-semibold text-slate-700 transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal className="w-4 h-4 text-orange-500" />
+                <span>Opções Avançadas (Fornecedor, Recorrência, Parcelamento, Observações)</span>
+                {(isRecurring || isInstallment || supplierId || notes) && (
+                  <span className="w-2 h-2 rounded-full bg-orange-500 inline-block" title="Há opções avançadas configuradas" />
+                )}
+              </div>
+              <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${showAdvancedOptions ? "rotate-180" : ""}`} />
+            </button>
+          </div>
+
+          {/* Container Colapsável de Opções Avançadas */}
+          {showAdvancedOptions && (
+            <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/80 space-y-3.5 animate-in fade-in duration-200">
+              {/* Fornecedor */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                  Fornecedor (Opcional)
+                </label>
+                <select
+                  value={supplierId}
+                  onChange={(e) => setSupplierId(e.target.value)}
+                  className="block w-full px-3 py-2 text-sm font-medium border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white"
+                >
+                  <option value="">Nenhum (ou selecione fornecedor...)</option>
+                  {suppliers.map((sup) => (
+                    <option key={sup.id} value={sup.id}>
+                      {sup.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Observações */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                  Observações (opcional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: NF 1234, Pago via Pix pelo sócio..."
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  className="block w-full px-3.5 py-2 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white"
+                />
+              </div>
+
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 pt-1 border-t border-slate-200/80">
+                {isEditing ? "Recorrência" : "Recorrência & Parcelamento"}
+              </div>
 
             <div className="flex flex-col sm:flex-row sm:items-center gap-4">
               {/* Checkbox Recorrência */}
@@ -837,6 +872,7 @@ export function TransactionModal({
                 </div>
               )}
             </div>
+          )}
 
           {/* Botões de Ação */}
           <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-100 flex-shrink-0">
