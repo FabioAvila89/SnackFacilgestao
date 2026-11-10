@@ -157,3 +157,89 @@ export function isBatchExpiringSoon(
   return exp.getTime() <= thresholdDate.getTime();
 }
 
+/**
+ * Calcula a reversão de estoque ao excluir uma movimentação
+ */
+export function calculateRevertStockBalance(
+  currentStock: number,
+  movementType: MovementType,
+  movementQuantity: number,
+  previousStock?: number
+): { newStock: number } {
+  if (movementQuantity < 0) {
+    throw new Error("A quantidade da movimentação não pode ser negativa.");
+  }
+
+  const roundedCurrent = Math.round(currentStock);
+  const roundedQty = Math.round(movementQuantity);
+
+  if (movementType === "IN") {
+    const resultingStock = roundedCurrent - roundedQty;
+    if (resultingStock < 0) {
+      throw new Error(
+        `Não é possível excluir esta entrada pois deixaria o estoque negativo (${resultingStock} un). Saldo atual: ${roundedCurrent} un, quantidade a reverter: ${roundedQty} un.`
+      );
+    }
+    return { newStock: resultingStock };
+  }
+
+  if (movementType === "OUT") {
+    return { newStock: roundedCurrent + roundedQty };
+  }
+
+  if (movementType === "ADJUST") {
+    if (previousStock !== undefined && previousStock !== null) {
+      return { newStock: Math.round(previousStock) };
+    }
+    return { newStock: roundedCurrent };
+  }
+
+  throw new Error(`Tipo de movimentação desconhecido: ${movementType}`);
+}
+
+/**
+ * Calcula o ajuste de estoque ao alterar a quantidade de uma movimentação
+ */
+export function calculateStockEditDelta(
+  currentStock: number,
+  movementType: MovementType,
+  oldQuantity: number,
+  newQuantity: number
+): { newStock: number; delta: number } {
+  if (newQuantity < 0 || oldQuantity < 0) {
+    throw new Error("As quantidades não podem ser negativas.");
+  }
+
+  const roundedCurrent = Math.round(currentStock);
+  const oldQty = Math.round(oldQuantity);
+  const newQty = Math.round(newQuantity);
+  const diff = newQty - oldQty;
+
+  if (movementType === "IN") {
+    const resultingStock = roundedCurrent + diff;
+    if (resultingStock < 0) {
+      throw new Error(
+        `Saldo insuficiente no depósito para esta redução de entrada. Saldo atual: ${roundedCurrent} un, redução solicitada: ${Math.abs(diff)} un.`
+      );
+    }
+    return { newStock: resultingStock, delta: diff };
+  }
+
+  if (movementType === "OUT") {
+    const resultingStock = roundedCurrent - diff;
+    if (resultingStock < 0) {
+      throw new Error(
+        `Saldo insuficiente no depósito para aumentar a saída. Saldo disponível: ${roundedCurrent} un, acréscimo solicitado: ${diff} un.`
+      );
+    }
+    return { newStock: resultingStock, delta: -diff };
+  }
+
+  if (movementType === "ADJUST") {
+    return { newStock: newQty, delta: diff };
+  }
+
+  throw new Error(`Tipo de movimentação desconhecido: ${movementType}`);
+}
+
+

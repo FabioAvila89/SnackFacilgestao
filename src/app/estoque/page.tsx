@@ -24,6 +24,8 @@ import {
   ShieldCheck,
   RefreshCw,
   SlidersHorizontal,
+  Edit2,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -162,6 +164,23 @@ export default function StockControlPage() {
   const [isNewMachineModalOpen, setIsNewMachineModalOpen] = useState(false);
   const [newMachineName, setNewMachineName] = useState("");
   const [newMachineLocation, setNewMachineLocation] = useState("");
+
+  // Estados para Exclusão de Movimentação
+  const [movementToDelete, setMovementToDelete] = useState<StockMovementItem | null>(null);
+  const [deleteFinancialTx, setDeleteFinancialTx] = useState(true);
+  const [deletingMovement, setDeletingMovement] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Estados para Edição de Movimentação
+  const [movementToEdit, setMovementToEdit] = useState<StockMovementItem | null>(null);
+  const [editQuantity, setEditQuantity] = useState("1");
+  const [editUnitCost, setEditUnitCost] = useState("0,00");
+  const [editExpirationDate, setEditExpirationDate] = useState("");
+  const [editMachineId, setEditMachineId] = useState("");
+  const [editSupplierId, setEditSupplierId] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const [modalError, setModalError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -554,6 +573,123 @@ export default function StockControlPage() {
     }
   };
 
+  const handleOpenDeleteModal = (movement: StockMovementItem) => {
+    setMovementToDelete(movement);
+    setDeleteFinancialTx(true);
+    setDeleteError(null);
+    setDeletingMovement(false);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!movementToDelete) return;
+    try {
+      setDeletingMovement(true);
+      setDeleteError(null);
+
+      const res = await fetch(
+        `/api/stock-movements/${movementToDelete.id}?deleteFinancialTransaction=${deleteFinancialTx}`,
+        { method: "DELETE" }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao excluir movimentação.");
+
+      // Invalidação de caches
+      invalidateCache((key) => key.includes("/api/stock-movements"));
+      invalidateCache((key) => key.includes("/api/products"));
+      if (movementToDelete.transactionId) {
+        invalidateCache((key) => key.includes("/api/transactions") || key.includes("/api/reports") || key.includes("/api/accounts"));
+        window.dispatchEvent(new CustomEvent("snack:transaction-updated"));
+      }
+      window.dispatchEvent(new CustomEvent("snack:stock-updated"));
+
+      setMovementToDelete(null);
+      fetchMovements(true);
+      loadInitialFilters(true);
+    } catch (err: any) {
+      setDeleteError(err.message || "Erro ao excluir movimentação.");
+    } finally {
+      setDeletingMovement(false);
+    }
+  };
+
+  const handleOpenEditModal = (movement: StockMovementItem) => {
+    setMovementToEdit(movement);
+    setEditQuantity(String(movement.quantity));
+    setEditUnitCost(
+      movement.unitCost
+        ? movement.unitCost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : "0,00"
+    );
+    setEditExpirationDate(movement.expirationDate ? formatDateToInput(new Date(movement.expirationDate)) : "");
+    setEditMachineId(movement.machineId || "");
+    setEditSupplierId(movement.supplierId || "");
+    setEditNotes(movement.notes || "");
+    setEditError(null);
+    setSavingEdit(false);
+    loadModalData();
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!movementToEdit) return;
+
+    try {
+      setSavingEdit(true);
+      setEditError(null);
+
+      const parsedQty = parseInt(editQuantity, 10);
+      if (isNaN(parsedQty) || parsedQty <= 0) {
+        setEditError("A quantidade deve ser maior que zero.");
+        return;
+      }
+
+      if (movementToEdit.reason === "MACHINE_REFILL" && !editMachineId) {
+        setEditError("Selecione a máquina abastecida.");
+        return;
+      }
+
+      const parsedCost = parseNumber(editUnitCost);
+
+      const payload: any = {
+        quantity: parsedQty,
+        notes: editNotes.trim() || null,
+        expirationDate: editExpirationDate || null,
+        machineId: editMachineId || null,
+        supplierId: editSupplierId || null,
+      };
+
+      if (movementToEdit.type === "IN" && movementToEdit.reason === "PURCHASE") {
+        payload.unitCost = parsedCost;
+      }
+
+      const res = await fetch(`/api/stock-movements/${movementToEdit.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao salvar alterações da movimentação.");
+
+      // Invalidação de caches
+      invalidateCache((key) => key.includes("/api/stock-movements"));
+      invalidateCache((key) => key.includes("/api/products"));
+      if (movementToEdit.transactionId) {
+        invalidateCache((key) => key.includes("/api/transactions") || key.includes("/api/reports") || key.includes("/api/accounts"));
+        window.dispatchEvent(new CustomEvent("snack:transaction-updated"));
+      }
+      window.dispatchEvent(new CustomEvent("snack:stock-updated"));
+
+      setMovementToEdit(null);
+      fetchMovements(true);
+      loadInitialFilters(true);
+    } catch (err: any) {
+      setEditError(err.message || "Erro ao salvar alterações.");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   // Itens abaixo do estoque mínimo
   const lowStockProducts = products.filter((p) => p.currentStock <= p.minStock);
 
@@ -746,6 +882,7 @@ export default function StockControlPage() {
                         <th className="py-3 px-4">Destino / Detalhes</th>
                         <th className="py-3 px-4 text-center">Vínculo Financeiro</th>
                         <th className="py-3 px-4 text-right">Usuário</th>
+                        {canOperate && <th className="py-3 px-4 text-center">Ações</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -891,6 +1028,28 @@ export default function StockControlPage() {
                             <td className="py-3.5 px-4 text-right text-xs text-slate-500 whitespace-nowrap">
                               {m.user?.name || "Sistema"}
                             </td>
+
+                            {/* Ações */}
+                            {canOperate && (
+                              <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    onClick={() => handleOpenEditModal(m)}
+                                    title="Editar movimentação"
+                                    className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleOpenDeleteModal(m)}
+                                    title="Excluir movimentação"
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            )}
                           </tr>
                         );
                       })}
@@ -1565,6 +1724,342 @@ export default function StockControlPage() {
             </div>
           </div>
         )}
+
+        {/* Modal de Confirmação de Exclusão */}
+        {movementToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
+            <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="p-3 bg-rose-50 text-rose-600 rounded-2xl border border-rose-200 flex-shrink-0">
+                  <Trash2 className="w-6 h-6" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-base font-bold text-slate-900">Excluir Movimentação de Estoque</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Esta ação irá reverter a movimentação física e restaurar o saldo no depósito.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMovementToDelete(null)}
+                  className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Detalhes do item a ser excluído */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Produto:</span>
+                  <span className="font-bold text-slate-900">{movementToDelete.product?.name}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Tipo de Movimentação:</span>
+                  <span className="font-semibold text-slate-800">
+                    {movementToDelete.reason === "PURCHASE"
+                      ? "Compra Atacado (Entrada)"
+                      : movementToDelete.reason === "MACHINE_REFILL"
+                      ? "Abastecimento de Máquina (Saída)"
+                      : movementToDelete.reason === "LOSS_EXPIRED"
+                      ? "Perda por Validade (Saída)"
+                      : movementToDelete.reason === "LOSS_DAMAGE"
+                      ? "Perda por Avaria (Saída)"
+                      : "Ajuste de Inventário"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Quantidade da movimentação:</span>
+                  <span className="font-mono font-bold text-slate-900 text-sm">
+                    {movementToDelete.quantity} {getUnitSymbol(movementToDelete.product?.unit)}
+                  </span>
+                </div>
+                <div className="pt-2 border-t border-slate-200/60 flex justify-between items-center text-amber-800 bg-amber-50/60 -mx-3.5 -mb-3.5 p-3 rounded-b-xl">
+                  <span className="font-semibold">Impacto no Depósito:</span>
+                  <span className="font-bold">
+                    {movementToDelete.type === "IN"
+                      ? `Reduzirá -${movementToDelete.quantity} un do saldo físico`
+                      : movementToDelete.type === "OUT"
+                      ? `Devolverá +${movementToDelete.quantity} un ao saldo físico`
+                      : `Restaurará o saldo anterior (${movementToDelete.previousStock} un)`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Vínculo Financeiro */}
+              {movementToDelete.transactionId && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 space-y-2">
+                  <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
+                    <DollarSign className="w-4 h-4 text-emerald-600" />
+                    <span>Lançamento Financeiro Vinculado</span>
+                  </div>
+                  <p className="text-[11px] text-emerald-700 leading-relaxed">
+                    Esta compra gerou uma despesa financeira registrada no valor de{" "}
+                    <strong>
+                      {formatCentsToBRL(movementToDelete.transaction?.amountCents || Math.round((movementToDelete.totalCost || 0) * 100))}
+                    </strong>.
+                  </p>
+                  <label className="flex items-center gap-2 pt-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={deleteFinancialTx}
+                      onChange={(e) => setDeleteFinancialTx(e.target.checked)}
+                      className="rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4"
+                    />
+                    <span className="text-xs font-semibold text-emerald-900">
+                      Excluir também o lançamento financeiro em Lançamentos
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              {deleteError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-500 flex-shrink-0" />
+                  <span>{deleteError}</span>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  disabled={deletingMovement}
+                  onClick={() => setMovementToDelete(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer border border-slate-200"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={deletingMovement}
+                  onClick={handleConfirmDelete}
+                  className="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-md shadow-rose-600/20 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {deletingMovement && (
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  )}
+                  <span>Confirmar Exclusão</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal de Edição de Movimentação */}
+        {movementToEdit && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
+            <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden">
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 flex-shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <Edit2 className="w-5 h-5 text-amber-500" />
+                  <div>
+                    <h2 className="text-base font-bold text-slate-800">Editar Movimentação de Estoque</h2>
+                    <p className="text-xs text-slate-500">{movementToEdit.product?.name} ({movementToEdit.product?.sku})</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMovementToEdit(null)}
+                  className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Form Body */}
+              <form onSubmit={handleSaveEdit} className="p-6 space-y-4 overflow-y-auto">
+                {/* Resumo e Tipo */}
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
+                  <div>
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold">Tipo da Movimentação</span>
+                    <span className="font-bold text-slate-800">
+                      {movementToEdit.reason === "PURCHASE"
+                        ? "Compra Atacado (Entrada)"
+                        : movementToEdit.reason === "MACHINE_REFILL"
+                        ? "Abastecimento de Máquina (Saída)"
+                        : movementToEdit.reason === "LOSS_EXPIRED"
+                        ? "Perda por Validade (Saída)"
+                        : movementToEdit.reason === "LOSS_DAMAGE"
+                        ? "Perda por Avaria (Saída)"
+                        : "Ajuste de Inventário"}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold">Saldo Atual no Depósito</span>
+                    <span className="font-mono font-bold text-slate-900">
+                      {movementToEdit.product?.currentStock} {getUnitSymbol(movementToEdit.product?.unit)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Quantidade */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Quantidade Movimentada ({getUnitSymbol(movementToEdit.product?.unit)}) *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={editQuantity}
+                    onChange={(e) => setEditQuantity(e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  />
+                  {/* Prévia do impacto */}
+                  {(() => {
+                    const parsed = parseInt(editQuantity, 10);
+                    if (!isNaN(parsed) && parsed > 0 && movementToEdit.product) {
+                      const diff = parsed - movementToEdit.quantity;
+                      let resulting = movementToEdit.product.currentStock;
+                      if (movementToEdit.type === "IN") resulting += diff;
+                      else if (movementToEdit.type === "OUT") resulting -= diff;
+                      else if (movementToEdit.type === "ADJUST") resulting = parsed;
+
+                      return (
+                        <p className={`text-[11px] mt-1 font-medium ${resulting < 0 ? "text-rose-600 font-bold" : "text-slate-500"}`}>
+                          💡 Com essa alteração, o saldo do depósito passará de <strong>{movementToEdit.product.currentStock}</strong> para <strong>{resulting} {getUnitSymbol(movementToEdit.product?.unit)}</strong>.
+                        </p>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+
+                {/* Campos para Compra */}
+                {movementToEdit.type === "IN" && movementToEdit.reason === "PURCHASE" && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Custo Unitário Pago (R$)
+                      </label>
+                      <input
+                        type="text"
+                        value={editUnitCost}
+                        onChange={(e) => setEditUnitCost(e.target.value)}
+                        placeholder="0,00"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Fornecedor
+                      </label>
+                      <select
+                        value={editSupplierId}
+                        onChange={(e) => setEditSupplierId(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-xs text-slate-700 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                      >
+                        <option value="">Nenhum fornecedor vinculado</option>
+                        {suppliers.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Alerta de sincronização financeira */}
+                    {movementToEdit.transactionId && (
+                      <div className="sm:col-span-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2">
+                        <DollarSign className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                        <span>
+                          O valor do lançamento financeiro em Lançamentos será recalculado automaticamente para{" "}
+                          <strong>
+                            {formatCentsToBRL(
+                              Math.round(
+                                (parseInt(editQuantity, 10) || 0) * parseNumber(editUnitCost) * 100
+                              )
+                            )}
+                          </strong>.
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Seleção de Máquina para Abastecimento */}
+                {movementToEdit.reason === "MACHINE_REFILL" && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Máquina Abastecida *
+                    </label>
+                    <select
+                      value={editMachineId}
+                      required
+                      onChange={(e) => setEditMachineId(e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-xs text-slate-700 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                    >
+                      <option value="">Selecione uma máquina</option>
+                      {machines.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} {m.location ? `(${m.location})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Data de Validade */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Data de Validade do Lote (Opcional)
+                  </label>
+                  <input
+                    type="date"
+                    value={editExpirationDate}
+                    onChange={(e) => setEditExpirationDate(e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs text-slate-700 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  />
+                </div>
+
+                {/* Observações */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Observações / Justificativa
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={editNotes}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                    placeholder="Ex: Correção de contagem, ajuste de lote, etc."
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-700 focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  />
+                </div>
+
+                {editError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-500 flex-shrink-0" />
+                    <span>{editError}</span>
+                  </div>
+                )}
+
+                {/* Footer Buttons */}
+                <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    disabled={savingEdit}
+                    onClick={() => setMovementToEdit(null)}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer border border-slate-200"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingEdit}
+                    className="px-4 py-2 text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl shadow-md shadow-amber-500/20 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {savingEdit && (
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    )}
+                    <span>Salvar Alterações</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
       </div>
     </>
   );
