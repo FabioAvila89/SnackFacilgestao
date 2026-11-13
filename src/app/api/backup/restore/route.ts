@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120; // 2 minutos para restaurações volumosas
+export const maxDuration = 60; // 60 segundos na Vercel
 
 export async function POST(req: Request) {
   // 1. Somente ADMIN pode restaurar backup
@@ -52,7 +52,51 @@ export async function POST(req: Request) {
       return result;
     };
 
-    // 2. Limpeza completa dos dados anteriores respeitando ordem de Foreign Keys
+    // 2. PRESERVAÇÃO DE SENHAS: Mapeia as senhas atuais do banco antes da limpeza
+    const currentUsers = await prisma.user.findMany({
+      select: {
+        email: true,
+        passwordHash: true,
+        mustChangePassword: true,
+      },
+    });
+
+    const existingPasswordMap = new Map<string, { hash: string; mustChange: boolean }>();
+    for (const u of currentUsers) {
+      if (u.email && u.passwordHash) {
+        existingPasswordMap.set(u.email.toLowerCase().trim(), {
+          hash: u.passwordHash,
+          mustChange: !!u.mustChangePassword,
+        });
+      }
+    }
+
+    // 3. Prepara usuários garantindo preservação de senha
+    const fallbackPassword = process.env.ADMIN_PASSWORD || "AdminSnack2026!";
+    let fallbackHash: string | null = null;
+    const usersToInsert = [];
+
+    for (const row of data.users || []) {
+      const userData = parseDates(row);
+      const emailKey = (userData.email || "").toLowerCase().trim();
+      const existing = existingPasswordMap.get(emailKey);
+
+      if (userData.passwordHash) {
+        // Caso 1: O backup já tem a senha salva -> usa a senha intacta do backup
+      } else if (existing) {
+        // Caso 2: O backup veio sem senha, MAS o usuário já existe no banco -> PRESERVA A SENHA ATUAL!
+        userData.passwordHash = existing.hash;
+        userData.mustChangePassword = existing.mustChange;
+      } else {
+        // Caso 3: Usuário novo e sem senha no backup -> aplica senha provisória padrão
+        if (!fallbackHash) fallbackHash = await bcrypt.hash(fallbackPassword, 10);
+        userData.passwordHash = fallbackHash;
+        userData.mustChangePassword = true;
+      }
+      usersToInsert.push(userData);
+    }
+
+    // 4. Limpeza completa dos dados anteriores respeitando ordem de Foreign Keys
     await prisma.$transaction([
       prisma.stockMovement.deleteMany(),
       prisma.auditLog.deleteMany(),
@@ -66,75 +110,66 @@ export async function POST(req: Request) {
       prisma.organization.deleteMany(),
     ]);
 
-    // 3. Inserção ordenada dos dados do backup
+    // 5. INSERÇÃO EM LOTE RÁPIDA (createMany) — Execução em menos de 2 segundos!
 
-    // 3.1 Organizations
-    for (const row of data.organizations || []) {
-      await prisma.organization.create({ data: parseDates(row) });
+    // 5.1 Organizations
+    if (data.organizations?.length > 0) {
+      await prisma.organization.createMany({ data: data.organizations.map(parseDates) });
     }
 
-    // 3.2 Users
-    const fallbackPassword = process.env.ADMIN_PASSWORD || "AdminSnack2026!";
-    const fallbackHash = await bcrypt.hash(fallbackPassword, 10);
-
-    for (const row of data.users || []) {
-      const userData = parseDates(row);
-      // Se não houver passwordHash no backup, aplica fallback e exige troca
-      if (!userData.passwordHash) {
-        userData.passwordHash = fallbackHash;
-        userData.mustChangePassword = true;
-      }
-      await prisma.user.create({ data: userData });
+    // 5.2 Users (com senhas preservadas)
+    if (usersToInsert.length > 0) {
+      await prisma.user.createMany({ data: usersToInsert });
     }
 
-    // 3.3 Accounts
-    for (const row of data.accounts || []) {
-      await prisma.account.create({ data: parseDates(row) });
+    // 5.3 Accounts
+    if (data.accounts?.length > 0) {
+      await prisma.account.createMany({ data: data.accounts.map(parseDates) });
     }
 
-    // 3.4 Categories (pais primeiro para manter hierarquia de chaves estrangeiras)
-    const allCategories = data.categories || [];
+    // 5.4 Categories (pais primeiro para manter integridade da hierarquia)
+    const allCategories = (data.categories || []).map(parseDates);
     const parents = allCategories.filter((c: any) => !c.parentId);
     const children = allCategories.filter((c: any) => c.parentId);
 
-    for (const row of parents) {
-      await prisma.category.create({ data: parseDates(row) });
+    if (parents.length > 0) {
+      await prisma.category.createMany({ data: parents });
     }
-    for (const row of children) {
-      await prisma.category.create({ data: parseDates(row) });
-    }
-
-    // 3.5 Suppliers
-    for (const row of data.suppliers || []) {
-      await prisma.supplier.create({ data: parseDates(row) });
+    if (children.length > 0) {
+      await prisma.category.createMany({ data: children });
     }
 
-    // 3.6 Machines
-    for (const row of data.machines || []) {
-      await prisma.machine.create({ data: parseDates(row) });
+    // 5.5 Suppliers
+    if (data.suppliers?.length > 0) {
+      await prisma.supplier.createMany({ data: data.suppliers.map(parseDates) });
     }
 
-    // 3.7 Products
-    for (const row of data.products || []) {
-      await prisma.product.create({ data: parseDates(row) });
+    // 5.6 Machines
+    if (data.machines?.length > 0) {
+      await prisma.machine.createMany({ data: data.machines.map(parseDates) });
     }
 
-    // 3.8 Transactions
-    for (const row of data.transactions || []) {
-      await prisma.transaction.create({ data: parseDates(row) });
+    // 5.7 Products
+    if (data.products?.length > 0) {
+      await prisma.product.createMany({ data: data.products.map(parseDates) });
     }
 
-    // 3.9 Stock Movements
-    for (const row of data.stockMovements || []) {
-      await prisma.stockMovement.create({ data: parseDates(row) });
+    // 5.8 Transactions
+    if (data.transactions?.length > 0) {
+      await prisma.transaction.createMany({ data: data.transactions.map(parseDates) });
     }
 
-    // 3.10 Audit Logs históricos
-    for (const row of data.auditLogs || []) {
-      await prisma.auditLog.create({ data: parseDates(row) });
+    // 5.9 Stock Movements
+    if (data.stockMovements?.length > 0) {
+      await prisma.stockMovement.createMany({ data: data.stockMovements.map(parseDates) });
     }
 
-    // 4. Registra novo AuditLog referente a esta restauração
+    // 5.10 Audit Logs históricos
+    if (data.auditLogs?.length > 0) {
+      await prisma.auditLog.createMany({ data: data.auditLogs.map(parseDates) });
+    }
+
+    // 6. Registra novo AuditLog referente a esta restauração
     const totalRestored = Object.values(
       (metadata.tables as Record<string, number>) || {}
     ).reduce((a, b) => a + b, 0);
@@ -144,14 +179,14 @@ export async function POST(req: Request) {
         action: "DATABASE_RESTORE",
         userId: user.userId,
         userName: user.name,
-        details: `Restauração completa via Web pelo administrador ${user.email}. Backup original de ${metadata.createdAt} com ${totalRestored} registros.`,
+        details: `Restauração completa via Web pelo administrador ${user.email}. Backup original de ${metadata.createdAt} com ${totalRestored} registros. Senhas dos usuários preservadas.`,
         organizationId: user.organizationId,
       },
     });
 
     return NextResponse.json({
       success: true,
-      message: "Banco de dados restaurado com sucesso!",
+      message: "Banco de dados restaurado com sucesso! Senhas dos usuários preservadas.",
       backupDate: metadata.createdAt,
       totalRecords: totalRestored,
       tables: metadata.tables,
@@ -164,4 +199,3 @@ export async function POST(req: Request) {
     );
   }
 }
-

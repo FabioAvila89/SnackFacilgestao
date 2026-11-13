@@ -86,6 +86,60 @@ async function restore(backupPath) {
     process.exit(0);
   }
 
+  // Helpers para converter datas de string para Date
+  const parseDates = (obj) => {
+    const result = { ...obj };
+    for (const key of Object.keys(result)) {
+      if (
+        result[key] &&
+        typeof result[key] === "string" &&
+        /^\d{4}-\d{2}-\d{2}T/.test(result[key])
+      ) {
+        result[key] = new Date(result[key]);
+      }
+    }
+    return result;
+  };
+
+  // 1. PRESERVAÇÃO DE SENHAS: Lê usuários atuais antes de limpar
+  const currentUsers = await prisma.user.findMany({
+    select: { email: true, passwordHash: true, mustChangePassword: true },
+  });
+  const existingPasswordMap = new Map();
+  for (const u of currentUsers) {
+    if (u.email && u.passwordHash) {
+      existingPasswordMap.set(u.email.toLowerCase().trim(), {
+        hash: u.passwordHash,
+        mustChange: !!u.mustChangePassword,
+      });
+    }
+  }
+
+  // 2. Prepara usuários do backup
+  const fallbackPassword = process.env.ADMIN_PASSWORD || "AdminSnack2026!";
+  let fallbackHash = null;
+  const usersToInsert = [];
+
+  for (const row of data.users || []) {
+    const userData = parseDates(row);
+    const emailKey = (userData.email || "").toLowerCase().trim();
+    const existing = existingPasswordMap.get(emailKey);
+
+    if (userData.passwordHash) {
+      // Usa a senha do backup
+    } else if (existing) {
+      // PRESERVA A SENHA ATUAL QUE O USUÁRIO JÁ TEM NO BANCO!
+      userData.passwordHash = existing.hash;
+      userData.mustChangePassword = existing.mustChange;
+    } else {
+      // Usuário novo e sem senha
+      if (!fallbackHash) fallbackHash = await bcrypt.hash(fallbackPassword, 10);
+      userData.passwordHash = fallbackHash;
+      userData.mustChangePassword = true;
+    }
+    usersToInsert.push(userData);
+  }
+
   console.log("\n🗑️  Limpando dados atuais...");
 
   // Ordem de deleção respeitando foreign keys
@@ -102,97 +156,76 @@ async function restore(backupPath) {
     prisma.organization.deleteMany(),
   ]);
 
-  console.log("📥 Inserindo dados do backup...\n");
-
-  // Helpers para converter datas de string para Date
-  const parseDates = (obj) => {
-    const result = { ...obj };
-    for (const key of Object.keys(result)) {
-      if (
-        result[key] &&
-        typeof result[key] === "string" &&
-        /^\d{4}-\d{2}-\d{2}T/.test(result[key])
-      ) {
-        result[key] = new Date(result[key]);
-      }
-    }
-    return result;
-  };
+  console.log("📥 Inserindo dados do backup em lote (alta performance)...\n");
 
   // 1. Organizations
-  for (const row of data.organizations || []) {
-    await prisma.organization.create({ data: parseDates(row) });
+  if (data.organizations?.length > 0) {
+    await prisma.organization.createMany({ data: data.organizations.map(parseDates) });
   }
   console.log(`   ✅ Organizations: ${(data.organizations || []).length}`);
 
-  // 2. Users
-  for (const row of data.users || []) {
-    const userData = parseDates(row);
-    // Caso o backup tenha sido feito sem hash de senha, aplica uma temporária e exige troca
-    if (!userData.passwordHash) {
-      const tempPass = process.env.ADMIN_PASSWORD || "AdminSnack2026!";
-      userData.passwordHash = await bcrypt.hash(tempPass, 10);
-      userData.mustChangePassword = true;
-    }
-    await prisma.user.create({ data: userData });
+  // 2. Users (com senhas preservadas)
+  if (usersToInsert.length > 0) {
+    await prisma.user.createMany({ data: usersToInsert });
   }
-  console.log(`   ✅ Users: ${(data.users || []).length}`);
+  console.log(`   ✅ Users: ${usersToInsert.length} (senhas preservadas)`);
 
   // 3. Accounts
-  for (const row of data.accounts || []) {
-    await prisma.account.create({ data: parseDates(row) });
+  if (data.accounts?.length > 0) {
+    await prisma.account.createMany({ data: data.accounts.map(parseDates) });
   }
   console.log(`   ✅ Accounts: ${(data.accounts || []).length}`);
 
-  // 4. Categories (pais primeiro, depois filhas — respeita hierarquia)
-  const allCategories = data.categories || [];
+  // 4. Categories (pais primeiro, depois filhas)
+  const allCategories = (data.categories || []).map(parseDates);
   const parents = allCategories.filter((c) => !c.parentId);
   const children = allCategories.filter((c) => c.parentId);
-  for (const row of parents) {
-    await prisma.category.create({ data: parseDates(row) });
+
+  if (parents.length > 0) {
+    await prisma.category.createMany({ data: parents });
   }
-  for (const row of children) {
-    await prisma.category.create({ data: parseDates(row) });
+  if (children.length > 0) {
+    await prisma.category.createMany({ data: children });
   }
   console.log(`   ✅ Categories: ${allCategories.length}`);
 
   // 5. Suppliers
-  for (const row of data.suppliers || []) {
-    await prisma.supplier.create({ data: parseDates(row) });
+  if (data.suppliers?.length > 0) {
+    await prisma.supplier.createMany({ data: data.suppliers.map(parseDates) });
   }
   console.log(`   ✅ Suppliers: ${(data.suppliers || []).length}`);
 
   // 6. Machines
-  for (const row of data.machines || []) {
-    await prisma.machine.create({ data: parseDates(row) });
+  if (data.machines?.length > 0) {
+    await prisma.machine.createMany({ data: data.machines.map(parseDates) });
   }
   console.log(`   ✅ Machines: ${(data.machines || []).length}`);
 
   // 7. Products
-  for (const row of data.products || []) {
-    await prisma.product.create({ data: parseDates(row) });
+  if (data.products?.length > 0) {
+    await prisma.product.createMany({ data: data.products.map(parseDates) });
   }
   console.log(`   ✅ Products: ${(data.products || []).length}`);
 
   // 8. Transactions
-  for (const row of data.transactions || []) {
-    await prisma.transaction.create({ data: parseDates(row) });
+  if (data.transactions?.length > 0) {
+    await prisma.transaction.createMany({ data: data.transactions.map(parseDates) });
   }
   console.log(`   ✅ Transactions: ${(data.transactions || []).length}`);
 
   // 9. Stock Movements
-  for (const row of data.stockMovements || []) {
-    await prisma.stockMovement.create({ data: parseDates(row) });
+  if (data.stockMovements?.length > 0) {
+    await prisma.stockMovement.createMany({ data: data.stockMovements.map(parseDates) });
   }
   console.log(`   ✅ StockMovements: ${(data.stockMovements || []).length}`);
 
   // 10. Audit Logs
-  for (const row of data.auditLogs || []) {
-    await prisma.auditLog.create({ data: parseDates(row) });
+  if (data.auditLogs?.length > 0) {
+    await prisma.auditLog.createMany({ data: data.auditLogs.map(parseDates) });
   }
   console.log(`   ✅ AuditLogs: ${(data.auditLogs || []).length}`);
 
-  console.log("\n✅ Restauração concluída com sucesso!\n");
+  console.log("\n✅ Restauração concluída com sucesso em alta velocidade!\n");
 }
 
 restore(process.argv[2])
@@ -203,4 +236,3 @@ restore(process.argv[2])
   .finally(async () => {
     await prisma.$disconnect();
   });
-
