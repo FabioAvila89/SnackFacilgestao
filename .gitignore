@@ -28,6 +28,9 @@ scripts/dump.sql
 *.sql
 !prisma/migrations/**/*.sql
 
+# Backups do banco de dados (contém dados sensíveis)
+backups/
+
 *.tsbuildinfo
 
 # Agent browser local cache / data
