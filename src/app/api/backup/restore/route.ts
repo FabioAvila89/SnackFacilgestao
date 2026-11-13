@@ -74,7 +74,7 @@ export async function POST(req: Request) {
     }
 
     // 3.2 Users
-    const fallbackPassword = process.env.ADMIN_PASSWORD || "SnackFacil2026!";
+    const fallbackPassword = process.env.ADMIN_PASSWORD || "AdminSnack2026!";
     const fallbackHash = await bcrypt.hash(fallbackPassword, 10);
 
     for (const row of data.users || []) {

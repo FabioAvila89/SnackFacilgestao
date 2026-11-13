@@ -130,7 +130,7 @@ async function restore(backupPath) {
     const userData = parseDates(row);
     // Caso o backup tenha sido feito sem hash de senha, aplica uma temporária e exige troca
     if (!userData.passwordHash) {
-      const tempPass = process.env.ADMIN_PASSWORD || "SnackFacil2026!";
+      const tempPass = process.env.ADMIN_PASSWORD || "AdminSnack2026!";
       userData.passwordHash = await bcrypt.hash(tempPass, 10);
       userData.mustChangePassword = true;
     }
