@@ -13,7 +13,9 @@
     "prisma:push": "prisma db push",
     "prisma:seed": "node prisma/seed.js",
     "prisma:seed:demo": "cross-env WITH_DEMO=true node prisma/seed.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "backup": "node scripts/backup.js",
+    "restore": "node scripts/restore.js"
   },
   "dependencies": {
     "@prisma/client": "^5.21.1",

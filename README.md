@@ -128,29 +128,22 @@ O sistema conta com matriz centralizada de permissões (`src/lib/permissions.ts`
 
 ---
 
-## 💾 Backup do Banco de Dados e Migração Segura
+## 💾 Backup do Banco de Dados e Restauração
 
-Antes de realizar qualquer atualização ou migração de versão, faça sempre uma cópia de segurança dos dados:
+O sistema possui uma política de backup em **3 camadas** que não consome memória do Supabase (plano Free):
 
-### 1. Como Fazer Backup (Ambiente SQLite)
-Certifique-se de salvar uma cópia do arquivo `dev.db` localizado na pasta `prisma/`:
-```bash
-# Windows PowerShell:
-Copy-Item prisma/dev.db prisma/dev.db.backup-$(Get-Date -Format "yyyyMMdd-HHmmss")
+1. **Terminal (Script Local):**
+   ```bash
+   # Gerar backup (salvo em backups/)
+   npm run backup
 
-# Linux / macOS:
-cp prisma/dev.db prisma/dev.db.backup-$(date +%Y%m%d_%H%M%S)
-```
+   # Restaurar backup
+   npm run restore
+   ```
+2. **Navegador (Painel Web):** Acesse **Importar/Exportar** logado como administrador e clique em **Baixar Backup (.json)**.
+3. **Automação Diária (GitHub Actions):** Roda automaticamente todo dia às 00:00 (horário de Brasília) e guarda os arquivos nos artefatos do GitHub por 90 dias.
 
-*(Em produção com PostgreSQL, utilize o comando `pg_dump seu_banco > backup.sql`)*
-
-### 2. Executar a Migração e Atualização de Autoria
-Após atualizar o código ou o esquema do Prisma:
-```bash
-npx prisma db push
-node prisma/seed.js
-```
-O script `prisma/seed.js` executa uma rotina automática e segura que vincula lançamentos históricos existentes sem autor diretamente ao administrador principal da organização, garantindo continuidade sem perda de dados.
+> 📖 Para instruções completas, comandos de restauração e detalhes técnicos, consulte o [**Guia de Backup e Restauração (docs/BACKUP.md)**](./docs/BACKUP.md).
 
 ---
 

@@ -1,0 +1,66 @@
+name: "Backup Diário - Banco de Dados Snack Fácil"
+
+on:
+  schedule:
+    # Executa todo dia às 03:00 UTC (00:00 horário de Brasília)
+    - cron: "0 3 * * *"
+  workflow_dispatch: # Permite disparo manual pelo painel do GitHub
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DIRECT_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar PostgreSQL Client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Criar backup com pg_dump
+        run: |
+          mkdir -p backups
+          DATE=$(date +'%Y-%m-%d_%H-%M')
+
+          # Backup completo (schema + dados) em formato binário comprimido
+          pg_dump "$SUPABASE_DB_URL" \
+            --format=custom \
+            --no-owner \
+            --no-privileges \
+            --file="backups/backup_${DATE}.dump"
+
+          # Backup somente dados em SQL legível (para consulta/auditoria)
+          pg_dump "$SUPABASE_DB_URL" \
+            --data-only \
+            --inserts \
+            --file="backups/backup_data_${DATE}.sql"
+
+          echo "BACKUP_DATE=${DATE}" >> $GITHUB_ENV
+
+      - name: Verificar integridade do backup
+        run: |
+          DUMP_SIZE=$(stat --format="%s" "backups/backup_${BACKUP_DATE}.dump")
+          SQL_SIZE=$(stat --format="%s" "backups/backup_data_${BACKUP_DATE}.sql")
+
+          echo "📊 Backup dump: ${DUMP_SIZE} bytes"
+          echo "📊 Backup SQL:  ${SQL_SIZE} bytes"
+
+          # Falha se o backup estiver vazio (< 1KB provavelmente indica erro)
+          if [ "$DUMP_SIZE" -lt 1024 ]; then
+            echo "❌ Backup dump suspeitamente pequeno! Possível erro de conexão."
+            exit 1
+          fi
+
+          echo "✅ Backups gerados com sucesso!"
+
+      - name: Upload backup como artefato do GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: "db-backup-${{ env.BACKUP_DATE }}"
+          path: backups/
+          retention-days: 90
+
